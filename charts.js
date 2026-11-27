@@ -50,7 +50,7 @@ export function hbars({ rows, fmt = (v) => v, labelW = 200, rowH = 30, max, W = 
     out += `<rect x="${L}" y="${y}" width="${W - L - R}" height="${bh}" fill="#F2F4F8"/>`;
     if (r.value > 0) out += `<rect x="${L}" y="${y}" width="${Math.max(2, X(r.value) - L)}" height="${bh}" fill="${r.color || '#0F5BFF'}"/>`;
     if (r.target) out += `<line x1="${X(r.target)}" x2="${X(r.target)}" y1="${y - 3}" y2="${y + bh + 3}" stroke="${T1}" stroke-width="2"/>`;
-    out += `<text x="${X(Math.max(r.value || 0, r.target || 0)) + 8}" y="${y + bh / 2 + 4}" font-size="12" fill="${T2}">${esc(r.sub ?? fmt(r.value))}</text>`;
+    out += `<text x="${W - R + 14}" y="${y + bh / 2 + 4}" font-size="12" fill="${T2}">${esc(r.sub ?? fmt(r.value))}</text>`; // labels in one column, just right of the track
     out += `<rect x="0" y="${y - 2}" width="${W}" height="${rowH - 4}" fill="transparent" data-tip="${esc(r.tip || `${r.label}: ${fmt(r.value)}`)}"/>`;
   });
   return out + '</svg>';
