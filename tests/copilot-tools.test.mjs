@@ -27,7 +27,7 @@ await check('get_dashboard_insights', {}, (r) => r.insights.length === 1);
 await check('list_tasks', { status: 'active' }, (r) => r.count === 0);
 console.log('SKIP propose_task here (needs the browser confirm card; covered by tests/e2e-copilot.py)');
 ctx.state.mode = 'live';
-await check('get_live_summary', {}, (r) => r.totals.base_target_inr === 7040000 && r.totals.deals === 56);
+await check('get_live_summary', {}, (r) => r.totals.base_target_inr === 7040000 && r.totals.deals === 98 && r.totals.signed_cash_inr === 3300000 && r.totals.collected_inr === 1515000 && r.collection_gap_inr === 1785000);
 await check('list_live_rows', { tab: 'Deals', field: 'revenue_line', value: 'RENEW' }, (r) => r.total_rows === 24);
 // schema sanity for Gemini: every declaration has name, description, object parameters
 const all = [..._test.SAMPLE_TOOLS, ..._test.LIVE_TOOLS, ..._test.COMMON_TOOLS];

@@ -37,7 +37,7 @@ function systemPrompt() {
   if (st.mode === 'sample') {
     const E = st.engine;
     return `You are the growth analyst copilot inside the CampusFest Growth Center (sponsorship track). You answer ONLY from the dashboard's data via tools.
-Dataset: SAMPLE = CampusFest 2025 sponsor data (synthetic test data from the assignment), covering ${E.range.start} to ${E.range.end}; fest on 12-13 Apr 2025. The dashboard's selected date is ${st.asOf}; use it as as_of unless the user names another date. Currency INR; write money as ₹ with lakh (L) or crore (Cr), e.g. ₹22.4L.
+Dataset: 2025 ACTUALS = CampusFest 2025 sponsorship data, i.e. last year's fest (the dataset provided with the assignment), covering ${E.range.start} to ${E.range.end}; fest on 12-13 Apr 2025. The dashboard's selected date is ${st.asOf}; use it as as_of unless the user names another date. Currency INR; write money as ₹ with lakh (L) or crore (Cr), e.g. ₹22.4L.
 Facts about this data you must respect:
 - A date means end of that day in IST. History tables give the latest version on or before the date. Never add up history rows.
 - Brands, contacts, outreach attempts and deals (opportunities) are different populations. A brand can have several deals (Beardo has 2).
@@ -54,8 +54,10 @@ How to work:
 5. Follow-up questions refer to the previous answer's subject; reuse it.
 6. If a question is outside sponsorship growth for this fest, say briefly that you only cover this dashboard's data.`;
   }
+  const asOf = st.liveAsOf || 'unknown';
   return `You are the growth analyst copilot inside the CampusFest Growth Center (sponsorship track), LIVE mode: the CampusFest 2026 sponsorship tracker sheet (revenue lines, deals, payments, creators, in-kind, signals, tasks). Answer ONLY from tool results.
-Rules: cash collected comes only from the Payments tab; signed value is not cash; in-kind is tracked separately and never counted as cash (budget offset only when delivered and replacing a budget line). Base/stretch targets per revenue line come from the strategy model. Many tabs may still be empty early in the campaign: say so rather than guessing. Use calculate for arithmetic. Write ₹ in lakh/crore. Lead with the answer, cite numbers, mark assumptions. To create a task call propose_task; only claim it was created if the result says "created". If the user asks about 2025 history, tell them to switch the dashboard to Sample mode.`;
+Where the campaign stands: the tracker's latest update is ${asOf}. Treat that date as "today" when judging what is overdue or how much time is left. Plan context (from the strategy, not the sheet): a 12-week campaign from 5 Jan 2026 to the fest on 4-5 Apr 2026, so ${asOf} is about week 7. The 2026 data is an illustrative mid-campaign scenario; if asked whether it is real, say so.
+Rules: cash collected comes only from the Payments tab; signed value is not cash; in-kind is tracked separately and never counted as cash (budget offset only when delivered and replacing a budget line). Base/stretch targets per revenue line come from the strategy model. Overdue = next_step_due or task due before ${asOf} on a deal or task that is not closed. Use calculate for arithmetic. Write ₹ in lakh/crore. Lead with the answer, cite numbers, mark assumptions. To create a task call propose_task; only claim it was created if the result says "created". If the user asks about 2025 history, tell them to switch the dashboard to 2025 Actuals.`;
 }
 
 // ---------------- tool execution ----------------
@@ -143,7 +145,7 @@ function addMsg(cls, html) { const d = document.createElement('div'); d.classNam
 function suggestions() {
   const s = C.state.mode === 'sample'
     ? ['How are we tracking against the confirmed-partner goal?', 'Which campaigns should we scale, change or stop?', 'Where is the biggest bottleneck in the funnel?', 'How much cash have we collected?', 'Which qualified brands never got a proposal?', 'Why did we lose the Media deals?']
-    : ['Where are we against the base target?', 'Which revenue lines have no signed deals yet?', 'How much is signed but not collected?', 'What should the team do this week?'];
+    : ['Where are we against the base target, and are we on pace?', 'Which revenue lines are furthest behind?', 'How much is signed but not yet collected, and from whom?', 'Which deals and tasks are overdue?', 'Should we keep funding the City League?', 'What should the team do this week?'];
   $('#cpSuggest').innerHTML = s.map((x) => `<button>${C.esc(x)}</button>`).join('');
   $('#cpSuggest').querySelectorAll('button').forEach((b) => (b.onclick = () => ask(b.textContent)));
 }
@@ -154,7 +156,7 @@ function welcome() {
   $('#cpMsgs').innerHTML = '';
   const asOf = C.state.asOf || (C.state.engine && C.state.engine.range && C.state.engine.range.end);
   const when = asOf ? `, with the dashboard date set to <b>${fmtDate(asOf)}</b>` : ', using the latest date in the data';
-  const mode = C.state.mode === 'sample' ? `the <b>2025 sample</b> data (CampusFest 2025 test set)${when}` : 'the <b>Live</b> 2026 tracker';
+  const mode = C.state.mode === 'sample' ? `<b>CampusFest 2025 actuals</b> (last year’s fest)${when}` : `the <b>2026 live tracker</b>${C.state.liveAsOf ? `, last updated <b>${fmtDate(C.state.liveAsOf)}</b>` : ''}`;
   addMsg('bot', `<p>I answer from ${mode}. Every number comes from the same engine as the dashboard, and I'll say so when the data can't answer. I can also create tasks once you confirm.</p>`);
   suggestions();
 }

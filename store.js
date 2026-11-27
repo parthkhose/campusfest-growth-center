@@ -100,15 +100,17 @@ export async function loadTracker() {
     else if (s.trackerSheetId) src = await loadFromPublicSheet(s.trackerSheetId, TRACKER_TABS);
   } catch (e) { src = { error: String(e.message || e) }; }
   if (src && src.tabs) {
-    const tr = Object.fromEntries(TRACKER_TABS.map((k) => [k, src.tabs[k] || []]));
+    // Google Sheets stores typed dates as dates; Apps Script returns them as midnight IST timestamps. Show them as plain dates.
+    const day = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T00:00:00\+05:30$/.test(v) ? v.slice(0, 10) : v);
+    const tr = Object.fromEntries(TRACKER_TABS.map((k) => [k, (src.tabs[k] || []).map((r) => Object.fromEntries(Object.entries(r).map(([a, b]) => [a, day(b)])))]));
     tr.Tasks = tr.Tasks.map(normTask);
     return { tracker: tr, source: src.label, fetched_at: src.fetched_at, writable: src.writable, connected: true };
   }
   const local = LS.get('gc.tracker.local', null);
-  if (local) return { tracker: local, source: 'Local copy in this browser (seeded from the 2026 tracker template)', writable: false, connected: false, localCopy: true, error: src && src.error };
+  if (local) return { tracker: local, source: 'Local copy in this browser (from the bundled 2026 tracker)', writable: false, connected: false, localCopy: true, error: src && src.error };
   const seed = await loadBundled('./data/tracker-2026-seed.json');
   seed.Tasks = seed.Tasks.map(normTask);
-  return { tracker: seed, source: 'Bundled 2026 tracker template (seeded from 2025 data)', writable: false, connected: false, error: src && src.error };
+  return { tracker: seed, source: 'Bundled copy of the 2026 tracker', writable: false, connected: false, error: src && src.error };
 }
 
 export function normTask(t) {

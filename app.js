@@ -11,6 +11,10 @@ const pct = (v) => (v == null ? '—' : `${Math.round(v * 100)}%`);
 const $ = (s) => document.querySelector(s);
 const STAGE_LABEL = { prospecting: 'Prospecting', contacted: 'Contacted', proposal_sent: 'Proposal sent', negotiating: 'Negotiating', partner_confirmed: 'Confirmed', lost: 'Lost', withdrawn: 'Withdrawn' };
 const LIVE_STAGES = ['prospect', 'contacted', 'meeting', 'proposal', 'negotiating', 'signed', 'invoiced', 'partly_paid', 'paid', 'lost'];
+const fmtDay = (d) => { const t = new Date(`${String(d).slice(0, 10)}T00:00:00Z`); return isNaN(t) ? String(d || '') : t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }); };
+// The tracker's "today": the latest date anyone recorded in it (deal updates, payments, task creation).
+const trackerAsOf = (tr) => [...(tr.Deals || []).map((d) => d.last_updated), ...(tr.Payments || []).map((p) => p.received_date), ...(tr.Tasks || []).map((t) => t.created_at)]
+  .map((v) => String(v || '').slice(0, 10)).filter((v) => /^\d{4}-\d{2}-\d{2}$/.test(v)).sort().pop() || null;
 const nowIso = () => new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 19) + '+05:30';
 
 // ---------- state ----------
@@ -110,6 +114,7 @@ async function load() {
   } else {
     S.live = await loadTracker();
     S.liveSum = liveSummary(S.live.tracker);
+    S.liveAsOf = trackerAsOf(S.live.tracker);
   }
   if ((S.mode === 'sample' ? S.sample : S.live).error) flash(`Could not read the connected sheet (${(S.mode === 'sample' ? S.sample : S.live).error}). Showing the bundled copy.`);
   render();
@@ -130,7 +135,7 @@ function render() {
   const fn = { overview: vOverview, funnel: vFunnel, pipeline: vPipeline, brands: vBrands, tasks: vTasks, data: vData, plan: vPlan, deals: vDeals, creators: vCreators, inkind: vInKind, signals: vSignals }[S.view];
   const title = VIEWS[S.mode].find(([k]) => k === S.view)[1];
   $('#viewTitle').textContent = title;
-  $('#viewSub').textContent = S.mode === 'sample' ? `Sample: CampusFest 2025 test data · as of ${S.asOf} (end of day, IST)` : 'Live: CampusFest 2026 sponsorship tracker';
+  $('#viewSub').textContent = S.mode === 'sample' ? `CampusFest 2025 actuals · as of ${fmtDay(S.asOf)} (end of day, IST)` : `CampusFest 2026 tracker · latest update ${S.liveAsOf ? fmtDay(S.liveAsOf) : '—'}`;
   $('#view').innerHTML = fn();
   bindView();
 }
@@ -263,7 +268,7 @@ function vTasks() {
   return `<div class="card"><div class="filters"><select data-f="tasks.status"><option value="active" ${fl.status === 'active' ? 'selected' : ''}>Open and in progress</option><option value="" ${!fl.status ? 'selected' : ''}>All</option>${['open', 'in_progress', 'blocked', 'done', 'cancelled'].map((k) => `<option ${fl.status === k ? 'selected' : ''}>${k}</option>`).join('')}</select>
   <button class="btn primary sm" data-new-task>New task</button><span class="muted small">${esc(where)}</span></div>
   ${ts.length ? `<div class="table-wrap"><table><thead><tr><th>Task</th><th>Owner</th><th>Due</th><th>Status</th><th>Linked to</th><th>Source</th></tr></thead><tbody>
-  ${ts.map((t) => `<tr><td><b>${esc(t.title)}</b>${t.notes ? `<div class="small muted">${esc(t.notes)}</div>` : ''}<div class="small muted">${esc(t.task_id)}</div></td><td>${esc(t.owner)}</td><td>${esc(t.due || '')}${t.due && t.due < istDate(Date.now()) && !['done', 'cancelled'].includes(t.status) && S.mode === 'live' ? ' <span class="pill crit">overdue</span>' : ''}</td>
+  ${ts.map((t) => `<tr><td><b>${esc(t.title)}</b>${t.notes ? `<div class="small muted">${esc(t.notes)}</div>` : ''}<div class="small muted">${esc(t.task_id)}</div></td><td>${esc(t.owner)}</td><td>${esc(t.due || '')}${t.due && t.due < (S.liveAsOf || istDate(Date.now())) && !['done', 'cancelled'].includes(t.status) && S.mode === 'live' ? ' <span class="pill crit">overdue</span>' : ''}</td>
   <td><select data-task-status="${esc(t.task_id)}">${['open', 'in_progress', 'blocked', 'done', 'cancelled'].map((k) => `<option ${t.status === k ? 'selected' : ''}>${k}</option>`).join('')}</select></td><td class="small">${esc(t.linked_to)}</td><td>${t.source === 'copilot' ? '<span class="pill blue">copilot</span>' : `<span class="pill">${esc(t.source)}</span>`}</td></tr>`).join('')}
   </tbody></table></div>` : '<div class="empty">No tasks here yet.</div>'}</div>`;
 }
@@ -283,15 +288,15 @@ function vData() {
       <div class="source-actions">${id ? `<a class="btn sm primary" href="${sheetUrl(id)}" target="_blank" rel="noopener">Open Google Sheet ↗</a>` : ''}${script ? `<a class="btn sm" href="${esc(script)}" target="_blank" rel="noopener">View raw JSON ↗</a>` : ''}</div>
     </div>`;
   return `<div class="grid g2"><div class="card"><div class="card-head"><h2>Connections</h2><span class="note">set on the server · read-only here</span></div>
-    ${source('2025 sample data', 'CampusFest 2025 Sponsorship Data', st.sampleSheetId, st.sampleScriptUrl, S.sample)}
-    ${source('Live · 2026 tracker', 'CampusFest 2026 Sponsorship Tracker', st.trackerSheetId, st.trackerScriptUrl, S.live)}
+    ${source('2025 actuals', 'CampusFest 2025 Sponsorship Data (last year’s fest)', st.sampleSheetId, st.sampleScriptUrl, S.sample)}
+    ${source('2026 live tracker', 'CampusFest 2026 Sponsorship Tracker (mid-campaign snapshot)', st.trackerSheetId, st.trackerScriptUrl, S.live)}
     <h3 style="margin-top:18px">Copilot (Gemini)</h3>
     <div class="small">${cfg.gemini_configured ? `<span class="pill good">● Server key set</span> &nbsp;model <code>${esc(cfg.gemini_model)}</code>` : '<span class="pill warn">No server key</span> Set <code>GEMINI_API_KEY</code> in Vercel.'}
     &nbsp;${cfg.write_token_on_server ? '<span class="pill good">● Write token set</span>' : '<span class="pill">No write token</span>'}</div>
     <p class="small muted" style="margin:12px 0 0">To change a connection, update the Vercel environment variables (<code>SAMPLE_SCRIPT_URL</code>, <code>TRACKER_SCRIPT_URL</code>, <code>SAMPLE_SHEET_ID</code>, <code>TRACKER_SHEET_ID</code>) and redeploy.</p>
     <div class="form-actions"><button type="button" class="btn" id="clearLocal">Reset local edits</button></div>
   </div>
-  <div class="card"><h2>Current source</h2><div class="kv"><div>Dataset</div><div>${S.mode === 'sample' ? 'Sample (CampusFest 2025 test data)' : 'Live (2026 tracker)'}</div><div>Source</div><div>${esc(src.source)}</div><div>Write-back</div><div>${src.writable ? '<span class="pill good">on</span>' : '<span class="pill warn">off (browser storage)</span>'}</div>
+  <div class="card"><h2>Current source</h2><div class="kv"><div>Dataset</div><div>${S.mode === 'sample' ? 'CampusFest 2025 actuals (last year’s fest)' : 'CampusFest 2026 live tracker (illustrative mid-campaign data)'}</div><div>Source</div><div>${esc(src.source)}</div><div>Write-back</div><div>${src.writable ? '<span class="pill good">on</span>' : '<span class="pill warn">off (browser storage)</span>'}</div>
   ${dd ? `<div>Duplicates removed</div><div>${dd.interactions} interactions, ${dd.qualification} qualification versions, ${dd.opportunity_history} deal-history versions (same stable ID)</div><div>Edits in this browser</div><div>${S.sampleLocalEdits.length} deal updates, ${S.sampleLocalTasks.length} task changes</div>` : ''}</div>
   ${S.mode === 'sample' ? `<h3 style="margin-top:16px">Rules the numbers follow</h3><ul class="small"><li>A date means the end of that day in IST; only records on or before it count.</li><li>History tables use the latest version per deal or brand; versions are never added together.</li><li>Brands, contacts, attempts and deals are different populations.</li><li>A positive reply is not qualification. Confirmed value is not cash. Activations are associations, not proof of extra visitors.</li></ul>
   <h3 style="margin-top:12px">What this data cannot answer</h3><ul class="small"><li>Cash actually collected (no payment records)</li><li>Why deals were lost (no loss reasons)</li><li>Cost per deal or channel ROI (no spend or time data)</li><li>Causal impact of sponsor activations on footfall</li><li>Anything after 20 Apr 2025</li></ul>
@@ -375,7 +380,7 @@ function bindView() {
   v.querySelectorAll('[data-task-status]').forEach((el) => (el.onchange = () => updateTask(el.dataset.taskStatus, { status: el.value })));
   if (S.view === 'data' && !S._checking) {
     // The app loads only the active dataset. On this page, also check the other sheet so both statuses are real.
-    if (!S.live) { S._checking = true; loadTracker().then((r) => { S.live = r; S.liveSum = liveSummary(r.tracker); }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
+    if (!S.live) { S._checking = true; loadTracker().then((r) => { S.live = r; S.liveSum = liveSummary(r.tracker); S.liveAsOf = trackerAsOf(r.tracker); }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
     else if (!S.sample) { S._checking = true; loadSample().then((r) => { S.sample = r; }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
   }
   const cl = v.querySelector('#clearLocal');

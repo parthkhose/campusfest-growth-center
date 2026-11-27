@@ -10,20 +10,36 @@ There are two datasets, switched in the sidebar:
 
 | Mode | Data | Purpose |
 |---|---|---|
-| **Sample · 2025** | The assignment's `Sponsor_Dataset.xlsx` (CampusFest 2025, synthetic), rows exactly as delivered | Test case. Reviewers can change the data and ask the copilot unfamiliar questions. |
-| **Live · 2026** | CampusFest 2026 Sponsorship Tracker (Google Sheet) | Runs this year's plan. Fill the sheet as numbers come in and the dashboard updates. |
+| **2025 · Actuals** | Last year's fest: the assignment's `Sponsor_Dataset.xlsx` (CampusFest 2025), rows exactly as delivered (checked row by row against the Google Sheet) | The record the 2026 plan is built on. Reviewers can change the data and ask the copilot unfamiliar questions. |
+| **2026 · Live** | CampusFest 2026 Sponsorship Tracker (Google Sheet) holding an **illustrative mid-campaign snapshot** (fabricated; latest update 20 Feb 2026, week 7 of 12, fest 4-5 Apr 2026) | Shows how the team would run this year's plan. Edit the sheet and the dashboard updates. |
+
+### The 2026 scenario (fabricated, labelled as such)
+
+Built to be consistent with the strategy model and the 2025 data:
+
+| | Value |
+|---|---|
+| Signed cash | ₹33.0L of the ₹70.4L base target (47%, at 58% of the campaign time) |
+| Cash collected | ₹15.15L from 30 payments; ₹17.85L signed but not yet collected |
+| Open pipeline | ₹58.7L (includes a ₹15L anchor-tier prospect that is stretch only) |
+| Deals | 98: 24 renewals of 2025 partners, 32 rescued 2025 leftovers, 42 new across utility, creator, cause, league, warm, add-on, local and anchor lines; 13 lost |
+| Ahead of plan | Renewals (109% of base), as the 2025 warm-channel win rate predicted |
+| Behind plan | City League (17%, title sponsor still in negotiation), add-ons (13%), creator draft below its creator and brand-draft gates |
+| Collection | 4 advances overdue; on-time rate 78% against a 90% gate |
+
+The sheet's own Summary formulas give the same totals as the dashboard engine (checked). `data/tracker-2026-seed.json` is the same data, used when the sheet is unreachable.
 
 ## How it fits together
 
 ```
-Google Sheet (2025 sample)  ─┐                       ┌─ Dashboard screens
+Google Sheet (2025 actuals) ─┐                       ┌─ Dashboard screens
 Google Sheet (2026 tracker) ─┼─> Apps Script (read+write) ─> /api/sheet, /api/write ─> engine.js ─┤
 Bundled copies (offline)    ─┘                       └─ Copilot tools ─> /api/chat ─> Gemini
 ```
 
 - **`engine.js`** is the only place numbers are computed. The dashboard and every copilot tool call it, so they can't disagree.
 - **The copilot loop runs in the browser.** Gemini decides which tool to call, the browser runs that tool on the engine, and the result goes back to Gemini. `/api/chat` only adds the API key, so the key never reaches the browser.
-- **Writes are append-only.** A deal update in Sample mode is a new history version dated on the day you choose, so earlier snapshots don't change. The source data is built the same way.
+- **Writes are append-only.** A deal update in 2025 mode is a new history version dated on the day you choose, so earlier snapshots don't change. The source data is built the same way.
 - **No build step, no npm packages.** Plain ES modules plus three Vercel serverless functions, using Node 18+'s built-in `fetch`.
 
 ## Data rules the engine applies (from the dataset's Read me)
@@ -46,7 +62,7 @@ Tests:
 
 ```bash
 node tests/golden.test.mjs           # 29 checks vs answers computed independently in pandas
-node tests/copilot-tools.test.mjs    # every copilot tool against the sample data
+node tests/copilot-tools.test.mjs    # every copilot tool against the 2025 data and the 2026 tracker
 PORT=3077 node dev-server.mjs & python3 tests/e2e-copilot.py   # browser test of the copilot loop (scripted model)
 ```
 
@@ -62,7 +78,7 @@ The dashboard also has **Data & connections → Run data self-test**, which runs
 |---|---|---|
 | `GEMINI_API_KEY` | for the copilot | Free key from Google AI Studio (aistudio.google.com → Get API key) |
 | `GEMINI_MODEL` | no | A Flash model id from AI Studio. Defaults to `gemini-flash-latest`, falling back to other Flash models if that id is unknown |
-| `SAMPLE_SCRIPT_URL` | no | Apps Script `/exec` URL deployed on the 2025 sample sheet |
+| `SAMPLE_SCRIPT_URL` | no | Apps Script `/exec` URL deployed on the 2025 actuals sheet |
 | `TRACKER_SCRIPT_URL` | no | Apps Script `/exec` URL deployed on the 2026 tracker |
 | `WRITE_TOKEN` | no | Same value as the script property `WRITE_TOKEN`, if you set one |
 | `SAMPLE_SHEET_ID`, `TRACKER_SHEET_ID` | no | Read-only fallback for sheets shared as "Anyone with the link can view" |
@@ -73,8 +89,8 @@ The dashboard also has **Data & connections → Run data self-test**, which runs
 
 | Sheet | Link | Vercel variable |
 |---|---|---|
-| CampusFest 2025 Sponsorship Data (sample) | [Open](https://docs.google.com/spreadsheets/d/1pcvCnFlZPfhaw28JlKB0poLZi0WuNczvv3nRNsNYCUM/edit) | `SAMPLE_SCRIPT_URL` (Apps Script `/exec` on this sheet) |
-| CampusFest 2026 Sponsorship Tracker (live) | [Open](https://docs.google.com/spreadsheets/d/17ATh3RTrrEEJ1I1RRyKlmucen6lzKtEei39032ynZEQ/edit) | `TRACKER_SCRIPT_URL` (Apps Script `/exec` on this sheet) |
+| CampusFest 2025 Sponsorship Data (2025 actuals) | [Open](https://docs.google.com/spreadsheets/d/1pcvCnFlZPfhaw28JlKB0poLZi0WuNczvv3nRNsNYCUM/edit) | `SAMPLE_SCRIPT_URL` (Apps Script `/exec` on this sheet) |
+| CampusFest 2026 Sponsorship Tracker (2026 live, mid-campaign scenario) | [Open](https://docs.google.com/spreadsheets/d/17ATh3RTrrEEJ1I1RRyKlmucen6lzKtEei39032ynZEQ/edit) | `TRACKER_SCRIPT_URL` (Apps Script `/exec` on this sheet) |
 
 Both are created from `data/CampusFest_2025_Sponsorship_Data.xlsx` and `data/CampusFest_2026_Sponsorship_Tracker.xlsx`, so the tabs and headers match what the engine expects.
 
@@ -85,14 +101,14 @@ Both are created from `data/CampusFest_2025_Sponsorship_Data.xlsx` and `data/Cam
 3. Optional: **Project Settings → Script properties** → add `WRITE_TOKEN`.
 4. Put the URL in Vercel (`SAMPLE_SCRIPT_URL` / `TRACKER_SCRIPT_URL`) or paste it in **Data & connections**.
 
-A GET returns every tab as JSON with exact values. A POST appends or updates rows in `App_Tasks` and `App_Edits` (sample sheet), or in `Tasks`, `Deals`, `Payments`, `Creators`, `InKind` and `Signals` (tracker).
+A GET returns every tab as JSON with exact values. A POST appends or updates rows in `App_Tasks` and `App_Edits` (2025 sheet), or in `Tasks`, `Deals`, `Payments`, `Creators`, `InKind` and `Signals` (tracker).
 
 **Sheet layouts.** The 2025 sheet has one tab per source table (`event`, `targets`, `brands`, `contacts`, `campaigns`, `interactions`, `qualification`, `opportunities`, `opportunity_history`, `activations`) plus `App_Tasks` and `App_Edits`. The 2026 tracker has `Summary` (formulas), `Lines` (targets per revenue line), `Deals`, `Payments`, `Creators`, `InKind`, `Signals` and `Tasks`. Seed rows are the 24 partners from 2025 to renew and the 32 leftovers from 2025 to rescue.
 
 ## Copilot design
 
-- **Tools (Sample mode):** `get_snapshot`, `get_campaign_funnel`, `get_breakdown`, `list_opportunities`, `list_brands`, `get_trend`, `get_targets`, `query_records` (filter, group and aggregate any table, for unfamiliar questions), `get_dashboard_insights`.
-- **Tools (Live mode):** `get_live_summary`, `list_live_rows`.
+- **Tools (2025 mode):** `get_snapshot`, `get_campaign_funnel`, `get_breakdown`, `list_opportunities`, `list_brands`, `get_trend`, `get_targets`, `query_records` (filter, group and aggregate any table, for unfamiliar questions), `get_dashboard_insights`.
+- **Tools (2026 live mode):** `get_live_summary`, `list_live_rows`.
 - **Tools (both modes):** `list_tasks`, `propose_task` (shows a confirmation card; the model only learns "created" after a click), `calculate` (exact arithmetic).
 - **System prompt:** the data's rules and limits; "call a tool for every number"; lead with the answer and the as-of date; separate evidence from assumption; refuse rather than guess.
 - **Follow-up questions** reuse the chat history. Gemini's thought signatures are passed back unchanged, which Gemini 3 models require for tool calling.
