@@ -11,7 +11,9 @@ export { LS };
 
 export const SETTINGS_KEY = 'gc.settings.v1';
 export function getSettings() {
-  return { sampleScriptUrl: '', trackerScriptUrl: '', sampleSheetId: '', trackerSheetId: '', writeToken: '', ...(window.__GC_ENV__ || {}), ...LS.get(SETTINGS_KEY, {}) };
+  // Connections come from the server (Vercel env vars) and are not editable in the UI, so the server wins.
+  // Browser-saved values only fill gaps, e.g. when running the static files without the /api routes.
+  return { sampleScriptUrl: '', trackerScriptUrl: '', sampleSheetId: '', trackerSheetId: '', writeToken: '', ...LS.get(SETTINGS_KEY, {}), ...(window.__GC_ENV__ || {}) };
 }
 export function saveSettings(s) { LS.set(SETTINGS_KEY, s); }
 
@@ -116,7 +118,7 @@ export function normTask(t) {
 // ---------- Writing ----------
 async function postScript(url, body) {
   const s = getSettings();
-  const payload = { ...body, token: s.writeToken || '' };
+  const payload = { ...body, token: window.__GC_SERVER__ ? '' : (s.writeToken || '') }; // on Vercel the server adds WRITE_TOKEN
   let r = await fetch('/api/write', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url, payload }) }).catch(() => null);
   if (!r || r.status === 404) r = await fetch(url, { method: 'POST', body: JSON.stringify(payload) }); // static preview: call Apps Script directly
   const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));

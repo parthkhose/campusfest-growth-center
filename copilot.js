@@ -102,9 +102,14 @@ async function callModel(contents, tools) {
   const s = getSettings(); const server = window.__GC_SERVER__;
   const body = { system: systemPrompt(), contents, tools };
   if (server && server.gemini_configured) {
-    const r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-    const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
-    if (!j.ok) throw new Error(j.error); return j;
+    let r, j;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      r = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      j = await r.json().catch(() => ({ ok: false, error: r.status === 504 ? 'TIMEOUT' : `HTTP ${r.status}` }));
+      if (j.ok || (r.status !== 504 && j.error !== 'TIMEOUT')) break; // retry a timeout once
+    }
+    if (!j.ok) throw new Error(j.error === 'TIMEOUT' || r.status === 504 ? 'Gemini took too long to answer. Please try again in a moment.' : j.error);
+    return j;
   }
   if (s.geminiBrowserKey) {
     const model = s.geminiModel || 'gemini-flash-latest';
@@ -143,10 +148,14 @@ function suggestions() {
   $('#cpSuggest').querySelectorAll('button').forEach((b) => (b.onclick = () => ask(b.textContent)));
 }
 
+const fmtDate = (d) => { const t = new Date(`${String(d).slice(0, 10)}T00:00:00Z`); return isNaN(t) ? String(d) : t.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }); };
+
 function welcome() {
   $('#cpMsgs').innerHTML = '';
-  const mode = C.state.mode === 'sample' ? `the <b>Sample</b> dataset (CampusFest 2025 test data), as of <b>${C.state.asOf}</b>` : 'the <b>Live</b> 2026 tracker';
-  addMsg('bot', `<p>I answer from ${mode}. Every number comes from the same engine as the dashboard, and I'll tell you when the data can't answer. I can also create tasks after you confirm.</p>`);
+  const asOf = C.state.asOf || (C.state.engine && C.state.engine.range && C.state.engine.range.end);
+  const when = asOf ? `, with the dashboard date set to <b>${fmtDate(asOf)}</b>` : ', using the latest date in the data';
+  const mode = C.state.mode === 'sample' ? `the <b>2025 sample</b> data (CampusFest 2025 test set)${when}` : 'the <b>Live</b> 2026 tracker';
+  addMsg('bot', `<p>I answer from ${mode}. Every number comes from the same engine as the dashboard, and I'll say so when the data can't answer. I can also create tasks once you confirm.</p>`);
   suggestions();
 }
 
@@ -198,6 +207,7 @@ export function initCopilot(ctx) {
   $('#copilotBtn').onclick = () => (document.querySelector('.app').classList.contains('cp-open') ? document.querySelector('.app').classList.remove('cp-open') : open());
   $('#cpClose').onclick = () => document.querySelector('.app').classList.remove('cp-open');
   $('#cpNew').onclick = () => { history = []; welcome(); };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelector('.app').classList.remove('cp-open'); });
   $('#cpForm').onsubmit = (e) => { e.preventDefault(); const t = $('#cpText').value; $('#cpText').value = ''; ask(t); };
   $('#cpText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#cpForm').requestSubmit(); } });
   document.querySelectorAll('.mode-switch button').forEach((b) => b.addEventListener('click', () => { history = []; setTimeout(welcome, 400); }));

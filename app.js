@@ -126,7 +126,7 @@ function render() {
   $('#asofWrap').style.display = S.mode === 'sample' ? '' : 'none';
   const src = S.mode === 'sample' ? S.sample : S.live;
   const cfg = window.__GC_SERVER__ || {};
-  $('#sourceBadge').innerHTML = `<div><span class="dot" style="background:${src?.connected ? '#22c55e' : '#f2a600'}"></span><b>${src?.connected ? 'Sheet connected' : 'Offline copy'}</b></div><div>${esc(src?.source || '')}</div>${src?.fetched_at ? `<div>Fetched ${esc(new Date(src.fetched_at).toLocaleString('en-IN'))}</div>` : ''}<div style="margin-top:6px"><span class="dot" style="background:${cfg.gemini_configured || getSettings().geminiBrowserKey ? '#22c55e' : '#f2a600'}"></span>Copilot ${cfg.gemini_configured ? 'connected (server key)' : getSettings().geminiBrowserKey ? 'using browser key' : 'needs a Gemini key'}</div>`;
+  $('#sourceBadge').innerHTML = `<div><span class="dot" style="background:${src?.connected ? '#7bd389' : '#e0b24f'}"></span><b>${src?.connected ? 'Sheet connected' : 'Offline copy'}</b></div><div>${esc(src?.source || '')}</div>${src?.fetched_at ? `<div>Fetched ${esc(new Date(src.fetched_at).toLocaleString('en-IN'))}</div>` : ''}<div style="margin-top:6px"><span class="dot" style="background:${cfg.gemini_configured || getSettings().geminiBrowserKey ? '#7bd389' : '#e0b24f'}"></span>Copilot ${cfg.gemini_configured ? 'connected (server key)' : getSettings().geminiBrowserKey ? 'using browser key' : 'needs a Gemini key'}</div>`;
   const fn = { overview: vOverview, funnel: vFunnel, pipeline: vPipeline, brands: vBrands, tasks: vTasks, data: vData, plan: vPlan, deals: vDeals, creators: vCreators, inkind: vInKind, signals: vSignals }[S.view];
   const title = VIEWS[S.mode].find(([k]) => k === S.view)[1];
   $('#viewTitle').textContent = title;
@@ -183,17 +183,17 @@ function vOverview() {
   </div>
   <div class="grid g-21">
     <div class="card"><div class="card-head"><h2>Confirmed partners vs goal</h2><span class="note">weekly, as of each date · target version: ${esc(tg?.version || '—')}</span></div>
-      <div class="chart">${lineChart({ series: [{ name: 'Confirmed', color: '#257de0', points: tr.series.map((p) => ({ x: p.date, y: p.value })) }, { name: 'Goal in force', color: '#8a8a83', dash: true, step: true, points: tr.series.map((p) => ({ x: p.date, y: p.goal })) }], marker: { x: '2025-03-15', label: 'Goal raised 20 → 28' } })}</div>
-      <div class="legend"><span class="line" style="--c:#257de0">Confirmed partners</span><span class="dash" style="--c:#8a8a83">Goal in force</span></div>
+      <div class="chart">${lineChart({ series: [{ name: 'Confirmed', color: '#0d0d0e', points: tr.series.map((p) => ({ x: p.date, y: p.value })) }, { name: 'Goal in force', color: '#a3a3a6', dash: true, step: true, points: tr.series.map((p) => ({ x: p.date, y: p.goal })) }], marker: { x: '2025-03-15', label: 'Goal raised 20 → 28' } })}</div>
+      <div class="legend"><span class="line" style="--c:#0d0d0e">Confirmed partners</span><span class="dash" style="--c:#a3a3a6">Goal in force</span></div>
       <h3 style="margin-top:14px">Qualified brands vs goal</h3>
-      <div class="chart">${lineChart({ height: 180, series: [{ name: 'Qualified', color: '#257de0', points: trq.series.map((p) => ({ x: p.date, y: p.value })) }, { name: 'Goal in force', color: '#8a8a83', dash: true, step: true, points: trq.series.map((p) => ({ x: p.date, y: p.goal })) }] })}</div>
+      <div class="chart">${lineChart({ height: 180, series: [{ name: 'Qualified', color: '#0d0d0e', points: trq.series.map((p) => ({ x: p.date, y: p.value })) }, { name: 'Goal in force', color: '#a3a3a6', dash: true, step: true, points: trq.series.map((p) => ({ x: p.date, y: p.goal })) }] })}</div>
     </div>
     <div class="card"><div class="card-head"><h2>Needs attention</h2><span class="note">computed from the data as of ${S.asOf}</span></div>
       ${ins.map((x, i) => `<div class="insight"><div class="ic ${x.sev}">${{ crit: '!', warn: '•', good: '✓', info: 'i' }[x.sev]}</div><div class="body"><div class="title">${esc(x.title)}</div><div class="detail">${esc(x.detail)}</div>${x.task ? `<button class="btn sm" style="margin-top:6px" data-ins-task="${i}">Create task</button>` : ''}</div></div>`).join('')}
     </div>
   </div>
-  <div class="card"><div class="card-head"><h2>Confirmed value by campaign</h2><span class="note">blue = warm channel, grey = cold · bar = confirmed value</span></div>
-    <div class="chart">${hbars({ rows: [...f].sort((x, y) => y.confirmed_value_inr - x.confirmed_value_inr || y.attempts - x.attempts).map((c) => ({ label: c.campaign, value: c.confirmed_value_inr, color: c.channel_type === 'warm' ? '#257de0' : '#b9b9b2', sub: `${inr(c.confirmed_value_inr)} · ${c.confirmed}/${c.opportunities} deals · ${c.attempts} attempts`, tip: `<b>${esc(c.campaign)}</b> (${c.channel_type})<br>${c.attempts} attempts · ${c.qualified} qualified<br>${c.confirmed} of ${c.opportunities} deals confirmed<br>${inr(c.confirmed_value_inr)} confirmed` })), fmt: inr, labelW: 210 })}</div>
+  <div class="card"><div class="card-head"><h2>Confirmed value by campaign</h2><span class="note">black = warm channel, grey = cold · bar = confirmed value</span></div>
+    <div class="chart">${hbars({ rows: [...f].sort((x, y) => y.confirmed_value_inr - x.confirmed_value_inr || y.attempts - x.attempts).map((c) => ({ label: c.campaign, value: c.confirmed_value_inr, color: c.channel_type === 'warm' ? '#0d0d0e' : '#cfcfc8', sub: `${inr(c.confirmed_value_inr)} · ${c.confirmed}/${c.opportunities} deals · ${c.attempts} attempts`, tip: `<b>${esc(c.campaign)}</b> (${c.channel_type})<br>${c.attempts} attempts · ${c.qualified} qualified<br>${c.confirmed} of ${c.opportunities} deals confirmed<br>${inr(c.confirmed_value_inr)} confirmed` })), fmt: inr, labelW: 210 })}</div>
   </div>`;
 }
 
@@ -272,21 +272,24 @@ function vData() {
   const st = getSettings(), cfg = window.__GC_SERVER__ || {};
   const src = S.mode === 'sample' ? S.sample : S.live;
   const dd = S.mode === 'sample' ? S.engine.dedupeReport : null;
-  return `<div class="grid g2"><div class="card"><h2>Connections</h2>
-  <form class="form" id="connForm">
-    <h3>Sample · 2025 sheet</h3>
-    <label>Apps Script web app URL (read + write)<input name="sampleScriptUrl" value="${esc(st.sampleScriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec"/></label>
-    <label>or public Sheet ID (read-only)<input name="sampleSheetId" value="${esc(st.sampleSheetId)}" placeholder="1pcvCnFlZPfhaw28JlKB0poLZi0WuNczvv3nRNsNYCUM"/></label>
-    <h3>Live · 2026 tracker</h3>
-    <label>Apps Script web app URL (read + write)<input name="trackerScriptUrl" value="${esc(st.trackerScriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec"/></label>
-    <label>or public Sheet ID (read-only)<input name="trackerSheetId" value="${esc(st.trackerSheetId)}" placeholder="17ATh3RTrrEEJ1I1RRyKlmucen6lzKtEei39032ynZEQ"/></label>
-    <label>Write token (if set in the Apps Script)<input name="writeToken" type="password" value="${esc(st.writeToken)}"/></label>
-    <h3>Copilot (Gemini)</h3>
-    <div class="small">${cfg.gemini_configured ? `<span class="pill good">✓ server key set on Vercel</span> model <code>${esc(cfg.gemini_model)}</code>` : '<span class="pill warn">No server key</span> Set <code>GEMINI_API_KEY</code> in Vercel, or paste a key below to use it from this browser only.'}</div>
-    <label>Gemini API key, this browser only (optional)<input name="geminiBrowserKey" type="password" value="${esc(st.geminiBrowserKey || '')}" placeholder="AIza…"/></label>
-    <label>Model id (optional)<input name="geminiModel" value="${esc(st.geminiModel || '')}" placeholder="gemini-flash-latest"/></label>
-    <div class="form-actions"><button type="button" class="btn" id="clearLocal">Reset local edits</button><button class="btn primary">Save and reload</button></div>
-  </form></div>
+  const sheetUrl = (id) => `https://docs.google.com/spreadsheets/d/${encodeURIComponent(id)}/edit`;
+  const mask = (u) => (u ? u.replace(/(macros\/s\/.{6}).+(.{6}\/exec)$/, '$1…$2') : '');
+  const source = (title, desc, id, script, loaded) => `<div class="source">
+      <div class="source-head"><div><div class="source-name">${title}</div><div class="small muted">${desc}</div></div>
+        ${loaded ? '<span class="pill good">● Connected</span>' : script || id ? '<span class="pill warn">Not loaded yet</span>' : '<span class="pill">Not set</span>'}</div>
+      <div class="source-row"><div class="k">Google Sheet</div><div class="v" title="${esc(id)}">${id ? esc(id) : '—'}</div></div>
+      <div class="source-row"><div class="k">Apps Script</div><div class="v" title="${esc(script)}">${script ? esc(mask(script)) : '—'}</div></div>
+      <div class="source-actions">${id ? `<a class="btn sm primary" href="${sheetUrl(id)}" target="_blank" rel="noopener">Open Google Sheet ↗</a>` : ''}${script ? `<a class="btn sm" href="${esc(script)}" target="_blank" rel="noopener">View raw JSON ↗</a>` : ''}</div>
+    </div>`;
+  return `<div class="grid g2"><div class="card"><div class="card-head"><h2>Connections</h2><span class="note">set on the server · read-only here</span></div>
+    ${source('2025 sample data', 'CampusFest 2025 Sponsorship Data', st.sampleSheetId, st.sampleScriptUrl, S.sample && S.sample.connected)}
+    ${source('Live · 2026 tracker', 'CampusFest 2026 Sponsorship Tracker', st.trackerSheetId, st.trackerScriptUrl, S.live && S.live.connected)}
+    <h3 style="margin-top:18px">Copilot (Gemini)</h3>
+    <div class="small">${cfg.gemini_configured ? `<span class="pill good">● Server key set</span> &nbsp;model <code>${esc(cfg.gemini_model)}</code>` : '<span class="pill warn">No server key</span> Set <code>GEMINI_API_KEY</code> in Vercel.'}
+    &nbsp;${cfg.write_token_on_server ? '<span class="pill good">● Write token set</span>' : '<span class="pill">No write token</span>'}</div>
+    <p class="small muted" style="margin:12px 0 0">To change a connection, update the Vercel environment variables (<code>SAMPLE_SCRIPT_URL</code>, <code>TRACKER_SCRIPT_URL</code>, <code>SAMPLE_SHEET_ID</code>, <code>TRACKER_SHEET_ID</code>) and redeploy.</p>
+    <div class="form-actions"><button type="button" class="btn" id="clearLocal">Reset local edits</button></div>
+  </div>
   <div class="card"><h2>Current source</h2><div class="kv"><div>Dataset</div><div>${S.mode === 'sample' ? 'Sample (CampusFest 2025 test data)' : 'Live (2026 tracker)'}</div><div>Source</div><div>${esc(src.source)}</div><div>Write-back</div><div>${src.writable ? '<span class="pill good">on</span>' : '<span class="pill warn">off (browser storage)</span>'}</div>
   ${dd ? `<div>Duplicates removed</div><div>${dd.interactions} interactions, ${dd.qualification} qualification versions, ${dd.opportunity_history} deal-history versions (same stable ID)</div><div>Edits in this browser</div><div>${S.sampleLocalEdits.length} deal updates, ${S.sampleLocalTasks.length} task changes</div>` : ''}</div>
   ${S.mode === 'sample' ? `<h3 style="margin-top:16px">Rules the numbers follow</h3><ul class="small"><li>A date means the end of that day in IST; only records on or before it count.</li><li>History tables use the latest version per deal or brand; versions are never added together.</li><li>Brands, contacts, attempts and deals are different populations.</li><li>A positive reply is not qualification. Confirmed value is not cash. Activations are associations, not proof of extra visitors.</li></ul>
@@ -306,7 +309,7 @@ function vPlan() {
     ${kpi('In-kind budget offset', inr(L.in_kind.budget_offset_inr), `${L.in_kind.delivered}/${L.in_kind.commitments} delivered · never counted as cash`)}
   </div>
   <div class="card"><div class="card-head"><h2>Signed cash vs base target, by revenue line</h2><span class="note">bar = signed cash · tick = base target</span></div>
-  <div class="chart">${hbars({ rows: L.lines.map((l) => ({ label: l.line, value: l.signed_cash_inr, target: l.base_target_inr, color: l.bet.startsWith('Bet') ? '#257de0' : '#8fb9ea', sub: `${inr(l.signed_cash_inr)} / ${inr(l.base_target_inr)}`, tip: `<b>${esc(l.line)}</b> (${esc(l.bet)})<br>Signed cash ${inr(l.signed_cash_inr)}<br>Base ${inr(l.base_target_inr)} · stretch ${inr(l.stretch_target_inr)}<br>Collected ${inr(l.collected_inr)}<br>${l.deals} deals, ${l.open} open` })), fmt: inr, labelW: 250, max: Math.max(...L.lines.map((l) => Math.max(l.base_target_inr, l.signed_cash_inr))) })}</div></div>
+  <div class="chart">${hbars({ rows: L.lines.map((l) => ({ label: l.line, value: l.signed_cash_inr, target: l.base_target_inr, color: l.bet.startsWith('Bet') ? '#0d0d0e' : '#8d8d87', sub: `${inr(l.signed_cash_inr)} / ${inr(l.base_target_inr)}`, tip: `<b>${esc(l.line)}</b> (${esc(l.bet)})<br>Signed cash ${inr(l.signed_cash_inr)}<br>Base ${inr(l.base_target_inr)} · stretch ${inr(l.stretch_target_inr)}<br>Collected ${inr(l.collected_inr)}<br>${l.deals} deals, ${l.open} open` })), fmt: inr, labelW: 250, max: Math.max(...L.lines.map((l) => Math.max(l.base_target_inr, l.signed_cash_inr))) })}</div></div>
   <div class="card"><h2>Revenue lines</h2><div class="table-wrap tall"><table><thead><tr><th>Line</th><th>Bet</th><th class="num">Base</th><th class="num">Stretch</th><th class="num">Deals</th><th class="num">Open pipeline</th><th class="num">Signed cash</th><th class="num">In-kind</th><th class="num">Collected</th><th class="num">vs base</th></tr></thead><tbody>
   ${L.lines.map((l) => `<tr><td><b>${esc(l.line)}</b><div class="small muted">${l.line_id}</div></td><td>${esc(l.bet)}</td><td class="num">${inr(l.base_target_inr)}</td><td class="num">${inr(l.stretch_target_inr)}</td><td class="num">${l.deals}</td><td class="num">${inr(l.pipeline_value_inr)}</td><td class="num">${inr(l.signed_cash_inr)}</td><td class="num">${inr(l.signed_in_kind_inr)}</td><td class="num">${inr(l.collected_inr)}</td><td class="num">${l.pct_of_base == null ? '—' : pct(l.pct_of_base)}</td></tr>`).join('')}
   <tr><td><b>Total</b></td><td></td><td class="num"><b>${inr(t.base_target_inr)}</b></td><td class="num"><b>${inr(t.stretch_target_inr)}</b></td><td class="num"><b>${t.deals}</b></td><td class="num"><b>${inr(t.pipeline_value_inr)}</b></td><td class="num"><b>${inr(t.signed_cash_inr)}</b></td><td class="num"><b>${inr(t.signed_in_kind_inr)}</b></td><td class="num"><b>${inr(t.collected_inr)}</b></td><td></td></tr>
@@ -369,11 +372,8 @@ function bindView() {
   if (bulk) bulk.onclick = () => { const fl = S.filters.brands || { preset: 'qualified_no_deal' }; const f = fl.preset === 'qualified_no_deal' ? { qualification_status: 'qualified', has_opportunity: false } : {}; if (fl.status) f.qualification_status = fl.status; if (fl.type) f.channel_type = fl.type; const r = S.engine.listBrands(S.asOf, f).rows; taskModal({ title: `Send proposals to ${r.length} brands`, linked_to: r.map((x) => x.brand_id).join(', '), notes: r.map((x) => x.brand_name).join(', ') }); };
   const nt = v.querySelector('[data-new-task]'); if (nt) nt.onclick = () => taskModal({});
   v.querySelectorAll('[data-task-status]').forEach((el) => (el.onchange = () => updateTask(el.dataset.taskStatus, { status: el.value })));
-  const cf = v.querySelector('#connForm');
-  if (cf) {
-    cf.onsubmit = (e) => { e.preventDefault(); const d = Object.fromEntries(new FormData(cf).entries()); for (const k of Object.keys(d)) d[k] = d[k].trim(); saveSettings(d); load(); };
-    v.querySelector('#clearLocal').onclick = () => openModal(`<h2>Reset local edits?</h2><p class="small">Removes deal updates, tasks and campaign decisions saved in this browser, and the local copy of the tracker. Data in the Google Sheets is not touched.</p><form class="form"><div class="form-actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary danger">Reset</button></div></form>`, () => { ['gc.sample.edits', 'gc.sample.tasks', 'gc.sample.decisions', 'gc.tracker.local'].forEach(LS.del); S.sampleLocalEdits = []; S.sampleLocalTasks = []; S.decisions = {}; load(); });
-  }
+  const cl = v.querySelector('#clearLocal');
+  if (cl) cl.onclick = () => openModal(`<h2>Reset local edits?</h2><p class="small">Removes deal updates, tasks and campaign decisions saved in this browser, and the local copy of the tracker. Data in the Google Sheets is not touched.</p><form class="form"><div class="form-actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary danger">Reset</button></div></form>`, () => { ['gc.sample.edits', 'gc.sample.tasks', 'gc.sample.decisions', 'gc.tracker.local'].forEach(LS.del); S.sampleLocalEdits = []; S.sampleLocalTasks = []; S.decisions = {}; load(); });
   const stb = v.querySelector('#selfTest'); if (stb) stb.onclick = selfTest;
   const nd = v.querySelector('[data-new-deal]'); if (nd) nd.onclick = () => editDeal(null);
   v.querySelectorAll('[data-edit-deal]').forEach((b) => (b.onclick = () => editDeal(b.dataset.editDeal)));
