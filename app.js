@@ -189,7 +189,7 @@ function vOverview() {
       <div class="chart">${lineChart({ height: 180, series: [{ name: 'Qualified', color: '#0F5BFF', points: trq.series.map((p) => ({ x: p.date, y: p.value })) }, { name: 'Goal in force', color: '#666666', dash: true, step: true, points: trq.series.map((p) => ({ x: p.date, y: p.goal })) }] })}</div>
     </div>
     <div class="card"><div class="card-head"><h2>Needs attention</h2><span class="note">computed from the data as of ${S.asOf}</span></div>
-      ${ins.map((x, i) => `<div class="insight"><div class="ic ${x.sev}">${{ crit: '!', warn: '•', good: '✓', info: 'i' }[x.sev]}</div><div class="body"><div class="title">${esc(x.title)}</div><div class="detail">${esc(x.detail)}</div>${x.task ? `<button class="btn sm" style="margin-top:6px" data-ins-task="${i}">Create task</button>` : ''}</div></div>`).join('')}
+      ${ins.map((x, i) => `<div class="insight ${x.sev}"><div class="ic ${x.sev}">${{ crit: '!', warn: '•', good: '✓', info: 'i' }[x.sev]}</div><div class="body"><div class="title">${esc(x.title)}</div><div class="detail">${esc(x.detail)}</div>${x.task ? `<button class="btn sm" style="margin-top:6px" data-ins-task="${i}">Create task</button>` : ''}</div></div>`).join('')}
     </div>
   </div>
   <div class="card"><div class="card-head"><h2>Confirmed value by campaign</h2><span class="note">blue = warm channel, grey = cold · bar = confirmed value</span></div>
