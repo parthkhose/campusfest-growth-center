@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CampusFest Growth Center: Sponsorship</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%23257de0%22/%3E%3C/svg%3E"/>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <div class="logo">GC</div>
+        <div><div class="brand-name">Growth Center</div><div class="brand-sub">CampusFest sponsorship</div></div>
+      </div>
+      <div class="mode-switch" role="tablist" aria-label="Dataset">
+        <button data-mode="sample" role="tab">Sample · 2025</button>
+        <button data-mode="live" role="tab">Live · 2026</button>
+      </div>
+      <nav id="nav"></nav>
+      <div class="side-foot" id="sourceBadge"></div>
+    </aside>
+    <main class="main">
+      <header class="top">
+        <div><h1 id="viewTitle">Overview</h1><div class="sub" id="viewSub"></div></div>
+        <div class="top-actions">
+          <label class="asof" id="asofWrap">As of <input type="date" id="asOf" /></label>
+          <button class="btn ghost" id="reloadBtn" title="Reload data from the connected source">Reload</button>
+          <button class="btn primary" id="copilotBtn">Ask the copilot</button>
+        </div>
+      </header>
+      <div id="banner"></div>
+      <section id="view" class="view"></section>
+    </main>
+    <aside class="copilot" id="copilot" aria-label="AI growth copilot">
+      <div class="cp-head">
+        <div><div class="cp-title">Growth copilot</div><div class="cp-sub" id="cpSub">Answers from the dashboard's data</div></div>
+        <div><button class="btn ghost sm" id="cpNew">New chat</button><button class="btn ghost sm" id="cpClose" aria-label="Close">✕</button></div>
+      </div>
+      <div class="cp-msgs" id="cpMsgs"></div>
+      <div class="cp-suggest" id="cpSuggest"></div>
+      <form class="cp-input" id="cpForm"><textarea id="cpText" rows="2" placeholder="Ask about targets, campaigns, deals, bottlenecks…"></textarea><button class="btn primary" type="submit">Send</button></form>
+    </aside>
+  </div>
+  <div class="modal" id="modal" hidden><div class="modal-card" id="modalCard"></div></div>
+  <div class="tip" id="tip" hidden></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+ "source": "Attendee_Dataset.xlsx (CampusFest 2025, synthetic) - summary for sponsor proof packs",
+ "unique_verified_external_visitors": 2050,
+ "by_day": {
+  "2025-04-12": 1430,
+  "2025-04-13": 620
+ },
+ "by_campaign": {
+  "Campus Ambassadors": 390,
+  "College Partnerships": 385,
+  "Paid Social": 340,
+  "Student Referrals": 275,
+  "Organic Search": 195,
+  "Creator Partners": 175,
+  "Community Groups": 165,
+  "Walk-in / unattributed": 125
+ },
+ "goal": 2200,
+ "note": "Activation links between sponsors and attendee campaigns are associations only; they do not prove extra visitors."
+}

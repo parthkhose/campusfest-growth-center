@@ -1,0 +1,36 @@
+// Runs every copilot tool against the sample data (no LLM needed). Run: node tests/copilot-tools.test.mjs
+import { readFileSync } from 'node:fs';
+import { createEngine, liveSummary } from '../engine.js';
+import { _test } from '../copilot.js';
+const raw = JSON.parse(readFileSync(new URL('../data/sample-2025.json', import.meta.url)));
+const tracker = JSON.parse(readFileSync(new URL('../data/tracker-2026-seed.json', import.meta.url)));
+const E = createEngine(raw);
+const tasks = [];
+const ctx = { state: { mode: 'sample', engine: E, asOf: '2025-04-20', live: { tracker } }, esc: (s) => s, currentTasks: () => tasks, insights: () => [{ sev: 'info', title: 't', detail: 'd' }], liveSummary: () => liveSummary(tracker), createTask: async (t) => ({ ...t, task_id: 'X' }) };
+_test.setCtx(ctx);
+let fail = 0;
+const check = async (name, args, pred, label) => { const r = await _test.runTool(name, args); const ok = !r.error && pred(r); if (!ok) fail++; console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${label || ''}${ok ? '' : ' -> ' + JSON.stringify(r).slice(0, 300)}`); };
+await check('get_snapshot', {}, (r) => r.confirmed_partnerships === 24 && r.cash_collected_inr === null);
+await check('get_snapshot', { as_of: '2025-03-15' }, (r) => r.confirmed_vs_goal.goal === 28 && r.qualified_vs_goal.met === true, 'revised target');
+await check('get_campaign_funnel', { campaign: 'Brand Leader LinkedIn' }, (r) => r.campaigns.length === 1 && r.campaigns[0].ever_confirmed === 1 && r.campaigns[0].withdrawn === 1, 'LinkedIn follow-up');
+await check('get_breakdown', { dimension: 'industry' }, (r) => r.rows.find((x) => x.industry === 'Media').lost === 6);
+await check('list_opportunities', { stage: 'negotiating' }, (r) => r.count === 8 && r.total_proposed_value_inr === 720000);
+await check('list_brands', { qualification_status: 'qualified', has_opportunity: false }, (r) => r.count === 18);
+await check('get_trend', { metric: 'confirmed_partnerships' }, (r) => r.series.at(-1).value === 24);
+await check('get_targets', { as_of: '2025-03-14' }, (r) => r.in_force.confirmed_partnerships_goal === 20);
+await check('query_records', { table: 'interactions', filters: [{ field: 'event_type', op: 'eq', value: 'replied' }, { field: 'outcome', op: 'eq', value: 'positive' }], group_by: 'sponsor_campaign_id' }, (r) => r.matched_rows === 79, 'positive replies');
+await check('query_records', { table: 'interactions', filters: [{ field: 'event_type', op: 'in', value: 'web_inbound,introduction_received' }] }, (r) => r.value === 48, 'in-op string');
+await check('query_records', { table: 'opportunities_latest', group_by: 'support_type', metric: 'sum', field: 'confirmed_value_inr' }, (r) => r.groups.find((g) => g.support_type === 'in_kind').value === 240000);
+await check('calculate', { expression: '(2240000-2000000)/24' }, (r) => r.result === 10000);
+const out = await _test.runTool('get_snapshot', { as_of: '2026-01-01' }); console.log(out.error ? 'PASS out-of-range date refused' : 'FAIL out-of-range'); if (!out.error) fail++;
+await check('get_dashboard_insights', {}, (r) => r.insights.length === 1);
+await check('list_tasks', { status: 'active' }, (r) => r.count === 0);
+console.log('SKIP propose_task here (needs the browser confirm card; covered by tests/e2e-copilot.py)');
+ctx.state.mode = 'live';
+await check('get_live_summary', {}, (r) => r.totals.base_target_inr === 7040000 && r.totals.deals === 56);
+await check('list_live_rows', { tab: 'Deals', field: 'revenue_line', value: 'RENEW' }, (r) => r.total_rows === 24);
+// schema sanity for Gemini: every declaration has name, description, object parameters
+const all = [..._test.SAMPLE_TOOLS, ..._test.LIVE_TOOLS, ..._test.COMMON_TOOLS];
+const bad = all.filter((t) => !t.name || !t.description || t.parameters.type !== 'object');
+console.log(bad.length ? `FAIL schema ${bad.map((b) => b.name)}` : `PASS ${all.length} tool schemas`);
+console.log(fail ? `${fail} failed` : 'all passed');
