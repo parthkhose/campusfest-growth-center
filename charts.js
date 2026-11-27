@@ -93,3 +93,42 @@ export function funnel({ stages }) {
   });
   return out + '</svg>';
 }
+
+// Pipeline strip: every deal on one bar. Segment width ~ deal count (with a minimum so small stages stay
+// readable), grouped into Open → Won → Closed with a bracket above each group. Segments carry data-stage
+// so the page can filter the table when one is clicked.
+// stages: [{key, label, n, value, valueLabel, group: 'open'|'won'|'closed'}]
+export function pipelineStrip({ stages, fmt = (v) => v, selected = '' }) {
+  const W = 1100, minW = 74, gap = 3, top = 40, barH = 64, H = top + barH + 58;
+  const N = Math.max(1, stages.reduce((s, x) => s + x.n, 0));
+  const free = W - minW * stages.length - gap * (stages.length - 1);
+  const widths = stages.map((s) => minW + (s.n / N) * free);
+  const openRamp = ['#BBD1F7', '#7FA6F8', '#3F7CFF', '#0F5BFF'];
+  let openI = 0;
+  const color = (s) => (s.group === 'won' ? '#0A0B0B' : s.group === 'closed' ? (s.key === 'lost' ? '#CCCCCC' : '#E5E5E5') : openRamp[Math.min(openI++, openRamp.length - 1)]);
+  let x = 0; const segs = stages.map((s, i) => { const seg = { ...s, x, w: widths[i], fill: color(s) }; x += widths[i] + gap; return seg; });
+  let out = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Pipeline by stage">`;
+  // group brackets
+  for (const g of ['open', 'won', 'closed']) {
+    const gs = segs.filter((s) => s.group === g); if (!gs.length) continue;
+    const x0 = gs[0].x, x1 = gs.at(-1).x + gs.at(-1).w, n = gs.reduce((a, s) => a + s.n, 0), v = gs.reduce((a, s) => a + s.value, 0);
+    const name = { open: 'Open', won: 'Won', closed: 'Closed' }[g];
+    const what = { open: 'proposed', won: 'confirmed', closed: 'proposed, not won' }[g];
+    out += `<text x="${x0}" y="14" font-family="monospace" font-size="11" letter-spacing=".06em" fill="${g === 'won' ? '#000' : g === 'open' ? '#0F5BFF' : '#666'}">${name.toUpperCase()}</text>`;
+    out += `<text x="${x0}" y="30" font-size="12.5" fill="#000"><tspan font-weight="600">${n} deals</tspan><tspan fill="#666"> · ${esc(fmt(v))} ${what}</tspan></text>`;
+    out += `<line x1="${x0}" x2="${x1}" y1="${top - 4}" y2="${top - 4}" stroke="${g === 'won' ? '#000' : g === 'open' ? '#0F5BFF' : '#CCCCCC'}" stroke-width="2"/>`;
+  }
+  // segments
+  for (const s of segs) {
+    const dark = ['#0A0B0B', '#0F5BFF', '#3F7CFF'].includes(s.fill);
+    const pct = Math.round((s.n / N) * 100);
+    out += `<g data-stage="${esc(s.key)}" style="cursor:pointer" opacity="${selected && selected !== s.key ? 0.3 : 1}" data-tip="${esc(`<b>${s.label}</b><br>${s.n} deals (${pct}% of all)<br>${fmt(s.value)} ${s.valueLabel}<br><i>Click to filter the table</i>`)}">`;
+    out += `<rect x="${s.x}" y="${top}" width="${s.w}" height="${barH}" fill="${s.fill}"/>`;
+    out += `<text x="${s.x + 12}" y="${top + 38}" font-size="26" font-weight="300" fill="${dark ? '#fff' : '#000'}" style="font-variant-numeric:tabular-nums">${s.n}</text>`;
+    out += `<text x="${s.x + 12}" y="${top + 55}" font-family="monospace" font-size="10.5" fill="${dark ? 'rgba(255,255,255,.75)' : '#666'}">${pct}%</text>`;
+    out += `<text x="${s.x}" y="${top + barH + 22}" font-size="12.5" fill="#000">${esc(s.label)}</text>`;
+    out += `<text x="${s.x}" y="${top + barH + 40}" font-family="monospace" font-size="11" fill="#666">${esc(fmt(s.value))}</text>`;
+    out += `</g>`;
+  }
+  return out + '</svg>';
+}

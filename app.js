@@ -1,6 +1,6 @@
 import { createEngine, liveSummary, OPEN_STAGES, cutoffOf, istDate } from './engine.js';
 import { loadSample, loadTracker, getSettings, saveSettings, appendRow, updateRow, LS, normTask } from './store.js';
-import { lineChart, hbars, funnel } from './charts.js';
+import { lineChart, hbars, funnel, pipelineStrip } from './charts.js';
 import { initCopilot } from './copilot.js';
 
 // ---------- helpers ----------
@@ -225,7 +225,12 @@ function vPipeline() {
   const all = E.listOpportunities(S.asOf).rows;
   const rows = E.listOpportunities(S.asOf, { stage: fl.stage || undefined, channel_type: fl.type || undefined, owner: fl.owner || undefined, min_days_in_stage: fl.idle ? 7 : undefined, open_only: fl.open || undefined }).rows.sort((a, b) => (OPEN_STAGES.includes(b.stage) - OPEN_STAGES.includes(a.stage)) || b.days_in_stage - a.days_in_stage);
   const byStage = Object.keys(STAGE_LABEL).map((k) => ({ k, n: all.filter((o) => o.stage === k).length, v: all.filter((o) => o.stage === k).reduce((s, o) => s + (k === 'partner_confirmed' ? o.confirmed_value_inr : o.proposed_value_inr), 0) }));
-  return `<div class="kpis">${byStage.map((b) => kpi(STAGE_LABEL[b.k], b.n, inr(b.v) + (b.k === 'partner_confirmed' ? ' confirmed' : ' proposed'))).join('')}</div>
+  const group = (k) => (k === 'partner_confirmed' ? 'won' : ['lost', 'withdrawn'].includes(k) ? 'closed' : 'open');
+  const strip = byStage.map((b) => ({ key: b.k, label: STAGE_LABEL[b.k], n: b.n, value: b.v, valueLabel: b.k === 'partner_confirmed' ? 'confirmed' : 'proposed', group: group(b.k) }));
+  const open = byStage.filter((b) => group(b.k) === 'open'), neg = byStage.find((b) => b.k === 'negotiating') || { n: 0, v: 0 };
+  return `<div class="card"><div class="card-head"><h2>Where the ${all.length} deals are</h2><span class="note">width = number of deals · click a stage to filter the table</span></div>
+    <div class="chart">${pipelineStrip({ stages: strip, fmt: inr, selected: fl.stage || '' })}</div>
+    <div class="note" style="margin-top:10px">${open.reduce((a, b) => a + b.n, 0)} deals are still open with ${inr(open.reduce((a, b) => a + b.v, 0))} proposed; the ${neg.n} in negotiation hold ${inr(neg.v)} of it. Values are proposed amounts except Won, which is confirmed value (not cash).</div></div>
   <div class="card"><div class="filters">
     <select data-f="pipe.stage"><option value="">All stages</option>${Object.entries(STAGE_LABEL).map(([k, l]) => `<option value="${k}" ${fl.stage === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
     <select data-f="pipe.type"><option value="">Warm and cold</option><option value="warm" ${fl.type === 'warm' ? 'selected' : ''}>Warm</option><option value="cold" ${fl.type === 'cold' ? 'selected' : ''}>Cold</option></select>
@@ -383,6 +388,7 @@ function bindView() {
     if (!S.live) { S._checking = true; loadTracker().then((r) => { S.live = r; S.liveSum = liveSummary(r.tracker); S.liveAsOf = trackerAsOf(r.tracker); }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
     else if (!S.sample) { S._checking = true; loadSample().then((r) => { S.sample = r; }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
   }
+  v.querySelectorAll('[data-stage]').forEach((g) => (g.onclick = () => { S.filters.pipe = { ...(S.filters.pipe || {}), stage: S.filters.pipe?.stage === g.dataset.stage ? '' : g.dataset.stage }; render(); }));
   const cl = v.querySelector('#clearLocal');
   if (cl) cl.onclick = () => openModal(`<h2>Reset local edits?</h2><p class="small">Removes deal updates, tasks and campaign decisions saved in this browser, and the local copy of the tracker. Data in the Google Sheets is not touched.</p><form class="form"><div class="form-actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary danger">Reset</button></div></form>`, () => { ['gc.sample.edits', 'gc.sample.tasks', 'gc.sample.decisions', 'gc.tracker.local'].forEach(LS.del); S.sampleLocalEdits = []; S.sampleLocalTasks = []; S.decisions = {}; load(); });
   const stb = v.querySelector('#selfTest'); if (stb) stb.onclick = selfTest;
