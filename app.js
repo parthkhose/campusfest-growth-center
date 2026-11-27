@@ -276,14 +276,15 @@ function vData() {
   const mask = (u) => (u ? u.replace(/(macros\/s\/.{6}).+(.{6}\/exec)$/, '$1…$2') : '');
   const source = (title, desc, id, script, loaded) => `<div class="source">
       <div class="source-head"><div><div class="source-name">${title}</div><div class="small muted">${desc}</div></div>
-        ${loaded ? '<span class="pill good">● Connected</span>' : script || id ? '<span class="pill warn">Not loaded yet</span>' : '<span class="pill">Not set</span>'}</div>
+        ${!script && !id ? '<span class="pill">Not set</span>' : loaded == null ? '<span class="pill">Checking…</span>' : loaded.connected ? '<span class="pill good">Connected</span>' : `<span class="pill crit" title="${esc(loaded.error || '')}">Not reachable</span>`}</div>
+      ${loaded && !loaded.connected && loaded.error ? `<div class="small" style="color:var(--crit)">${esc(loaded.error)}</div>` : ''}
       <div class="source-row"><div class="k">Google Sheet</div><div class="v" title="${esc(id)}">${id ? esc(id) : '—'}</div></div>
       <div class="source-row"><div class="k">Apps Script</div><div class="v" title="${esc(script)}">${script ? esc(mask(script)) : '—'}</div></div>
       <div class="source-actions">${id ? `<a class="btn sm primary" href="${sheetUrl(id)}" target="_blank" rel="noopener">Open Google Sheet ↗</a>` : ''}${script ? `<a class="btn sm" href="${esc(script)}" target="_blank" rel="noopener">View raw JSON ↗</a>` : ''}</div>
     </div>`;
   return `<div class="grid g2"><div class="card"><div class="card-head"><h2>Connections</h2><span class="note">set on the server · read-only here</span></div>
-    ${source('2025 sample data', 'CampusFest 2025 Sponsorship Data', st.sampleSheetId, st.sampleScriptUrl, S.sample && S.sample.connected)}
-    ${source('Live · 2026 tracker', 'CampusFest 2026 Sponsorship Tracker', st.trackerSheetId, st.trackerScriptUrl, S.live && S.live.connected)}
+    ${source('2025 sample data', 'CampusFest 2025 Sponsorship Data', st.sampleSheetId, st.sampleScriptUrl, S.sample)}
+    ${source('Live · 2026 tracker', 'CampusFest 2026 Sponsorship Tracker', st.trackerSheetId, st.trackerScriptUrl, S.live)}
     <h3 style="margin-top:18px">Copilot (Gemini)</h3>
     <div class="small">${cfg.gemini_configured ? `<span class="pill good">● Server key set</span> &nbsp;model <code>${esc(cfg.gemini_model)}</code>` : '<span class="pill warn">No server key</span> Set <code>GEMINI_API_KEY</code> in Vercel.'}
     &nbsp;${cfg.write_token_on_server ? '<span class="pill good">● Write token set</span>' : '<span class="pill">No write token</span>'}</div>
@@ -372,6 +373,11 @@ function bindView() {
   if (bulk) bulk.onclick = () => { const fl = S.filters.brands || { preset: 'qualified_no_deal' }; const f = fl.preset === 'qualified_no_deal' ? { qualification_status: 'qualified', has_opportunity: false } : {}; if (fl.status) f.qualification_status = fl.status; if (fl.type) f.channel_type = fl.type; const r = S.engine.listBrands(S.asOf, f).rows; taskModal({ title: `Send proposals to ${r.length} brands`, linked_to: r.map((x) => x.brand_id).join(', '), notes: r.map((x) => x.brand_name).join(', ') }); };
   const nt = v.querySelector('[data-new-task]'); if (nt) nt.onclick = () => taskModal({});
   v.querySelectorAll('[data-task-status]').forEach((el) => (el.onchange = () => updateTask(el.dataset.taskStatus, { status: el.value })));
+  if (S.view === 'data' && !S._checking) {
+    // The app loads only the active dataset. On this page, also check the other sheet so both statuses are real.
+    if (!S.live) { S._checking = true; loadTracker().then((r) => { S.live = r; S.liveSum = liveSummary(r.tracker); }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
+    else if (!S.sample) { S._checking = true; loadSample().then((r) => { S.sample = r; }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
+  }
   const cl = v.querySelector('#clearLocal');
   if (cl) cl.onclick = () => openModal(`<h2>Reset local edits?</h2><p class="small">Removes deal updates, tasks and campaign decisions saved in this browser, and the local copy of the tracker. Data in the Google Sheets is not touched.</p><form class="form"><div class="form-actions"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary danger">Reset</button></div></form>`, () => { ['gc.sample.edits', 'gc.sample.tasks', 'gc.sample.decisions', 'gc.tracker.local'].forEach(LS.del); S.sampleLocalEdits = []; S.sampleLocalTasks = []; S.decisions = {}; load(); });
   const stb = v.querySelector('#selfTest'); if (stb) stb.onclick = selfTest;
