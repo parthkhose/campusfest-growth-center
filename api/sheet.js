@@ -9,7 +9,11 @@ export default async function handler(req, res) {
       const r = await fetch(url, { redirect: 'follow' });
       const text = await r.text();
       res.setHeader('content-type', 'application/json');
-      res.setHeader('cache-control', 'no-store');
+      // Apps Script takes 3-5 s per read. Let Vercel's edge serve the last copy and refresh it in the background:
+      // fresh for 20 s, then served stale (instantly) for up to a day while a new copy is fetched.
+      // ?fresh=<ts> (Reload button, or the first read after a write) is a separate cache key, so it always goes to the sheet.
+      const ok = r.ok && text.startsWith('{') && text.includes('"ok":true');
+      res.setHeader('cache-control', ok && !req.query.fresh ? 'public, max-age=0, s-maxage=20, stale-while-revalidate=86400' : 'no-store');
       return res.status(r.ok ? 200 : 502).send(text);
     }
     if (mode === 'csv') {

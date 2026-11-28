@@ -3,7 +3,7 @@ export default function handler(req, res) {
   res.setHeader('cache-control', 'no-store');
   res.status(200).json({
     gemini_configured: Boolean(process.env.GEMINI_API_KEY),
-    gemini_model: process.env.GEMINI_MODEL || 'gemini-flash-latest',
+    gemini_model: process.env.GEMINI_MODEL || 'gemini-3-flash-preview',
     env: {
       sampleScriptUrl: process.env.SAMPLE_SCRIPT_URL || '',
       trackerScriptUrl: process.env.TRACKER_SCRIPT_URL || '',

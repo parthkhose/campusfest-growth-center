@@ -1,5 +1,5 @@
 import { createEngine, liveSummary, OPEN_STAGES, cutoffOf, istDate } from './engine.js';
-import { loadSample, loadTracker, getSettings, saveSettings, appendRow, updateRow, LS, normTask } from './store.js';
+import { loadSample, loadTracker, getSettings, saveSettings, appendRow, updateRow, LS, normTask, isDirty } from './store.js';
 import { lineChart, hbars, funnel, pipelineStrip } from './charts.js';
 import { initCopilot } from './copilot.js';
 
@@ -104,20 +104,34 @@ function taskModal(prefill = {}) {
 }
 
 // ---------- loading ----------
-async function load() {
-  $('#view').innerHTML = '<div class="empty">Loading data…</div>';
-  if (S.mode === 'sample') {
-    S.sample = await loadSample();
-    rebuildEngine();
+// Loading: show the last copy at once (memory, then this browser's snapshot), fetch in the background,
+// and re-render only if the data changed. The other year is preloaded so switching modes is instant.
+const SNAP = (m) => `gc.snap.${m}`;
+const fetchMode = (m, fresh) => (m === 'sample' ? loadSample({ fresh }) : loadTracker({ fresh }));
+function applyData(m, d) {
+  if (m === 'sample') {
+    S.sample = d; rebuildEngine();
     if (!S.asOf || S.asOf < S.engine.range.start || S.asOf > S.engine.range.end) S.asOf = S.engine.range.end;
     $('#asOf').min = S.engine.range.start; $('#asOf').max = S.engine.range.end; $('#asOf').value = S.asOf;
-  } else {
-    S.live = await loadTracker();
-    S.liveSum = liveSummary(S.live.tracker);
-    S.liveAsOf = trackerAsOf(S.live.tracker);
+  } else { S.live = d; S.liveSum = liveSummary(d.tracker); S.liveAsOf = trackerAsOf(d.tracker); }
+}
+const sig = (d) => (d ? JSON.stringify(d.raw || d.tracker || null).length + ':' + JSON.stringify(d.remoteEdits || []).length + ':' + JSON.stringify(d.remoteTasks || []).length + ':' + JSON.stringify((d.tracker || {}).Tasks || []) .length : '');
+S.cache = S.cache || {};
+async function load({ fresh = false } = {}) {
+  const m = S.mode;
+  const snap = !fresh && !isDirty(m) ? S.cache[m] || LS.get(SNAP(m), null) : null;
+  if (snap) { applyData(m, snap); render(); } else $('#view').innerHTML = '<div class="empty">Loading data…</div>';
+  const d = await fetchMode(m, fresh);
+  S.cache[m] = d;
+  if (d.connected) { try { localStorage.setItem(SNAP(m), JSON.stringify(d)); } catch { /* storage full: skip the snapshot */ } }
+  if (S.mode === m && (!snap || sig(snap) !== sig(d) || snap.connected !== d.connected)) {
+    applyData(m, d);
+    if ($('#modal').hidden) render();
   }
-  if ((S.mode === 'sample' ? S.sample : S.live).error) flash(`Could not read the connected sheet (${(S.mode === 'sample' ? S.sample : S.live).error}). Showing the bundled copy.`);
-  render();
+  if (S.mode === m && d.error) flash(`Could not read the connected sheet (${d.error}). Showing the bundled copy.`);
+  // preload the other year once, after the first screen is up
+  const other = m === 'sample' ? 'live' : 'sample';
+  if (!S.cache[other] && !S._prefetching) { S._prefetching = true; setTimeout(() => fetchMode(other, false).then((o) => { S.cache[other] = o; if (o.connected) { try { localStorage.setItem(SNAP(other), JSON.stringify(o)); } catch { /* full */ } } }).catch(() => {}).finally(() => { S._prefetching = false; }), 800); }
 }
 
 function setMode(m) { S.mode = m; LS.set('gc.mode', m); S.view = VIEWS[m][0][0]; load(); }
@@ -385,6 +399,8 @@ function bindView() {
   v.querySelectorAll('[data-task-status]').forEach((el) => (el.onchange = () => updateTask(el.dataset.taskStatus, { status: el.value })));
   if (S.view === 'data' && !S._checking) {
     // The app loads only the active dataset. On this page, also check the other sheet so both statuses are real.
+    if (!S.live && S.cache.live) { applyData('live', S.cache.live); }
+    if (!S.sample && S.cache.sample) { S.sample = S.cache.sample; }
     if (!S.live) { S._checking = true; loadTracker().then((r) => { S.live = r; S.liveSum = liveSummary(r.tracker); S.liveAsOf = trackerAsOf(r.tracker); }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
     else if (!S.sample) { S._checking = true; loadSample().then((r) => { S.sample = r; }).catch(() => {}).finally(() => { S._checking = false; if (S.view === 'data') render(); }); }
   }
@@ -478,7 +494,7 @@ document.addEventListener('mousemove', (e) => {
 document.querySelectorAll('.mode-switch button').forEach((b) => (b.onclick = () => setMode(b.dataset.mode)));
 $('#nav').addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) { S.view = b.dataset.view; render(); } });
 $('#asOf').addEventListener('change', (e) => { const v = e.target.value; if (!v) return; S.asOf = v < S.engine.range.start ? S.engine.range.start : v > S.engine.range.end ? S.engine.range.end : v; e.target.value = S.asOf; render(); });
-$('#reloadBtn').onclick = () => load();
+$('#reloadBtn').onclick = () => load({ fresh: true });
 
 (async function boot() {
   try { const r = await fetch('/api/config'); if (r.ok) { const c = await r.json(); window.__GC_SERVER__ = c; window.__GC_ENV__ = Object.fromEntries(Object.entries(c.env || {}).filter(([, v]) => v)); } } catch { /* static preview */ }

@@ -48,8 +48,11 @@ function toObjects(matrix) {
 }
 
 // ---------- Loading ----------
-async function loadFromScript(url) {
-  let r = await fetch(`/api/sheet?mode=script&url=${encodeURIComponent(url)}`).catch(() => null);
+// After a write to a sheet, the next read of that sheet skips the edge cache so the change shows up.
+const dirty = { sample: false, live: false };
+export const isDirty = (mode) => dirty[mode];
+async function loadFromScript(url, fresh = false) {
+  let r = await fetch(`/api/sheet?mode=script&url=${encodeURIComponent(url)}${fresh ? `&fresh=${Date.now()}` : ''}`).catch(() => null);
   if (!r || r.status === 404) r = await fetch(url); // static preview without the /api routes
   if (!r.ok) throw new Error(`Apps Script returned ${r.status}`);
   const j = await r.json();
@@ -74,11 +77,12 @@ async function loadBundled(path) {
   return r.json();
 }
 
-export async function loadSample() {
+export async function loadSample({ fresh = false } = {}) {
   const s = getSettings();
   let src;
+  fresh = fresh || dirty.sample; dirty.sample = false;
   try {
-    if (s.sampleScriptUrl) src = await loadFromScript(s.sampleScriptUrl);
+    if (s.sampleScriptUrl) src = await loadFromScript(s.sampleScriptUrl, fresh);
     else if (s.sampleSheetId) src = await loadFromPublicSheet(s.sampleSheetId, SAMPLE_TABS);
   } catch (e) { src = { error: String(e.message || e) }; }
   if (src && src.tabs) {
@@ -92,11 +96,12 @@ export async function loadSample() {
   return { raw, remoteEdits: [], remoteTasks: [], source: 'Bundled copy of Sponsor_Dataset.xlsx (original rows)', fetched_at: null, writable: false, connected: false, error: src && src.error };
 }
 
-export async function loadTracker() {
+export async function loadTracker({ fresh = false } = {}) {
   const s = getSettings();
   let src;
+  fresh = fresh || dirty.live; dirty.live = false;
   try {
-    if (s.trackerScriptUrl) src = await loadFromScript(s.trackerScriptUrl);
+    if (s.trackerScriptUrl) src = await loadFromScript(s.trackerScriptUrl, fresh);
     else if (s.trackerSheetId) src = await loadFromPublicSheet(s.trackerSheetId, TRACKER_TABS);
   } catch (e) { src = { error: String(e.message || e) }; }
   if (src && src.tabs) {
@@ -132,11 +137,11 @@ export async function appendRow(mode, tab, row) {
   const s = getSettings();
   const url = mode === 'sample' ? s.sampleScriptUrl : s.trackerScriptUrl;
   if (!url) return { ok: true, local: true };
-  return postScript(url, { action: 'append', tab, row });
+  const j = await postScript(url, { action: 'append', tab, row }); dirty[mode] = true; return j;
 }
 export async function updateRow(mode, tab, key, id, patch) {
   const s = getSettings();
   const url = mode === 'sample' ? s.sampleScriptUrl : s.trackerScriptUrl;
   if (!url) return { ok: true, local: true };
-  return postScript(url, { action: 'update', tab, key, id, patch });
+  const j = await postScript(url, { action: 'update', tab, key, id, patch }); dirty[mode] = true; return j;
 }

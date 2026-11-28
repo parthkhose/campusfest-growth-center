@@ -32,6 +32,7 @@ const COMMON_TOOLS = [
   { name: 'calculate', description: 'Exact arithmetic. Use for every ratio, difference, average, share or projection instead of doing math in your head.', parameters: { type: 'object', properties: { expression: { type: 'string', description: 'e.g. (2240000-2000000)/24' } }, required: ['expression'] } },
 ];
 
+const safe = (f) => { try { return f(); } catch { return null; } };
 function systemPrompt() {
   const st = C.state;
   if (st.mode === 'sample') {
@@ -52,12 +53,16 @@ How to work:
 3. If the data cannot answer, say so plainly, say what is missing, and give the closest thing the data does show. Do not guess.
 4. Recommendations must cite the numbers behind them. When the user wants something done, call propose_task (one task per call) with the evidence in notes; only say a task was created if the tool result says status "created".
 5. Follow-up questions refer to the previous answer's subject; reuse it.
-6. If a question is outside sponsorship growth for this fest, say briefly that you only cover this dashboard's data.`;
+6. If a question is outside sponsorship growth for this fest, say briefly that you only cover this dashboard's data.
+7. Speed: when you need several lookups, request them all in the same turn. The headline numbers below are already the get_snapshot result for ${st.asOf}; answer from them directly when they suffice.
+HEADLINE (get_snapshot, as_of ${st.asOf}): ${JSON.stringify(safe(() => E.snapshot(st.asOf)))}`;
   }
   const asOf = st.liveAsOf || 'unknown';
   return `You are the growth analyst copilot inside the CampusFest Growth Center (sponsorship track), LIVE mode: the CampusFest 2026 sponsorship tracker sheet (revenue lines, deals, payments, creators, in-kind, signals, tasks). Answer ONLY from tool results.
 Where the campaign stands: the tracker's latest update is ${asOf}. Treat that date as "today" when judging what is overdue or how much time is left. Plan context (from the strategy, not the sheet): a 12-week campaign from 5 Jan 2026 to the fest on 4-5 Apr 2026, so ${asOf} is about week 7. The 2026 data is an illustrative mid-campaign scenario; if asked whether it is real, say so.
-Rules: cash collected comes only from the Payments tab; signed value is not cash; in-kind is tracked separately and never counted as cash (budget offset only when delivered and replacing a budget line). Base/stretch targets per revenue line come from the strategy model. Overdue = next_step_due or task due before ${asOf} on a deal or task that is not closed. Use calculate for arithmetic. Write ₹ in lakh/crore. Lead with the answer, cite numbers, mark assumptions. To create a task call propose_task; only claim it was created if the result says "created". If the user asks about 2025 history, tell them to switch the dashboard to 2025 Actuals.`;
+Rules: cash collected comes only from the Payments tab; signed value is not cash; in-kind is tracked separately and never counted as cash (budget offset only when delivered and replacing a budget line). Base/stretch targets per revenue line come from the strategy model. Overdue = next_step_due or task due before ${asOf} on a deal or task that is not closed. Use calculate for arithmetic. Write ₹ in lakh/crore. Lead with the answer, cite numbers, mark assumptions. To create a task call propose_task; only claim it was created if the result says "created". If the user asks about 2025 history, tell them to switch the dashboard to 2025 Actuals.
+Speed: when you need several lookups, request them all in the same turn. The summary below is already the get_live_summary result; answer from it directly when it suffices.
+SUMMARY (get_live_summary): ${JSON.stringify(safe(() => st.liveSum))}`;
 }
 
 // ---------------- tool execution ----------------
@@ -114,8 +119,8 @@ async function callModel(contents, tools) {
     return j;
   }
   if (s.geminiBrowserKey) {
-    const model = s.geminiModel || 'gemini-flash-latest';
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': s.geminiBrowserKey }, body: JSON.stringify({ systemInstruction: { parts: [{ text: body.system }] }, contents, tools: [{ functionDeclarations: tools }], generationConfig: { temperature: 0.2, maxOutputTokens: 2048 } }) });
+    const model = s.geminiModel || 'gemini-3-flash-preview';
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': s.geminiBrowserKey }, body: JSON.stringify({ systemInstruction: { parts: [{ text: body.system }] }, contents, tools: [{ functionDeclarations: tools }], generationConfig: { temperature: 0.2, maxOutputTokens: 2048, thinkingConfig: { thinkingLevel: 'minimal' } } }) });
     const j = await r.json();
     if (!r.ok) throw new Error((j.error && j.error.message) || `HTTP ${r.status}`);
     const cand = (j.candidates || [])[0] || {};
@@ -168,7 +173,7 @@ async function ask(text) {
   history.push({ role: 'user', parts: [{ text: `${text}\n\n[context: dashboard mode=${C.state.mode}${C.state.mode === 'sample' ? `, selected as_of=${C.state.asOf}` : ''}]` }] });
   const tools = [...(C.state.mode === 'sample' ? SAMPLE_TOOLS : LIVE_TOOLS), ...COMMON_TOOLS];
   const typing = addMsg('typing', 'Thinking…');
-  const trace = [];
+  const trace = [], t0 = performance.now();
   try {
     for (let step = 0; step < 8; step++) {
       const res = await callModel(history, tools);
@@ -180,17 +185,18 @@ async function ask(text) {
       if (!calls.length) {
         typing.remove();
         const d = addMsg('bot', md(texts || '(no answer)'));
-        if (trace.length) d.insertAdjacentHTML('beforeend', `<details class="trace"><summary>Data used: ${trace.map((t) => C.esc(t.name)).join(', ')}</summary>${trace.map((t) => `<pre>${C.esc(t.name)}(${C.esc(JSON.stringify(t.args))})\n→ ${C.esc(JSON.stringify(t.result).slice(0, 1500))}</pre>`).join('')}</details>`);
+        const secs = ((performance.now() - t0) / 1000).toFixed(1);
+        if (!trace.length) d.insertAdjacentHTML('beforeend', `<div class="trace">${secs} s · from the headline numbers</div>`);
+        if (trace.length) d.insertAdjacentHTML('beforeend', `<details class="trace"><summary>${secs} s · data used: ${trace.map((t) => C.esc(t.name)).join(', ')}</summary>${trace.map((t) => `<pre>${C.esc(t.name)}(${C.esc(JSON.stringify(t.args))})\n→ ${C.esc(JSON.stringify(t.result).slice(0, 1500))}</pre>`).join('')}</details>`);
         break;
       }
       typing.textContent = `Checking data: ${calls.map((c) => c.functionCall.name).join(', ')}…`;
-      const responses = [];
-      for (const p of calls) {
+      const responses = await Promise.all(calls.map(async (p) => {
         const { name, args = {}, id } = p.functionCall;
         const result = await runTool(name, args);
         trace.push({ name, args, result });
-        responses.push({ functionResponse: { name, ...(id ? { id } : {}), response: { result } } });
-      }
+        return { functionResponse: { name, ...(id ? { id } : {}), response: { result } } };
+      }));
       history.push({ role: 'user', parts: responses });
       if (step === 7) { typing.remove(); addMsg('err', 'Stopped after 8 tool steps. Try a narrower question.'); }
     }

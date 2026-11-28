@@ -77,7 +77,7 @@ The dashboard also has **Data & connections → Run data self-test**, which runs
 | Variable | Required | What it is |
 |---|---|---|
 | `GEMINI_API_KEY` | for the copilot | Free key from Google AI Studio (aistudio.google.com → Get API key) |
-| `GEMINI_MODEL` | no | A Flash model id from AI Studio. Defaults to `gemini-flash-latest`, falling back to other Flash models if that id is unknown |
+| `GEMINI_MODEL` | no | Override the model. Defaults to `gemini-3-flash-preview` (fastest measured: ~1.4 s to pick tools, ~1.7 s for an answer, with minimal thinking), then `gemini-flash-lite-latest`, then `gemini-flash-latest`. `GEMINI_THINKING` (minimal, low, medium, high) sets the thinking level; default minimal. |
 | `SAMPLE_SCRIPT_URL` | no | Apps Script `/exec` URL deployed on the 2025 actuals sheet |
 | `TRACKER_SCRIPT_URL` | no | Apps Script `/exec` URL deployed on the 2026 tracker |
 | `WRITE_TOKEN` | no | Same value as the script property `WRITE_TOKEN`, if you set one |
