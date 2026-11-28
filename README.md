@@ -94,6 +94,17 @@ The dashboard also has **Data & connections → Run data self-test**, which runs
 
 Both are created from `data/CampusFest_2025_Sponsorship_Data.xlsx` and `data/CampusFest_2026_Sponsorship_Tracker.xlsx`, so the tabs and headers match what the engine expects.
 
+## Voice (free, nothing extra to connect)
+
+| | How | Cost / setup |
+|---|---|---|
+| Speak a question | Mic button in the copilot. Chrome, Edge and Safari use the browser's Web Speech API (live transcript, Indian English `en-IN`). Firefox records and transcribes through `/api/voice` with Gemini. | Free. The browser asks once for microphone access. |
+| Hear the answer | Speaker toggle ("Voice on"). A spoken question is always answered aloud. `/api/voice` uses Gemini text-to-speech (`gemini-3.8-flash-lite-tts`, voice `Kore`), one sentence group at a time so playback starts quickly; it falls back to the browser's built-in voice if TTS is unavailable or rate-limited. | Free tier of the same `GEMINI_API_KEY`. Optional: `GEMINI_TTS_MODEL`, `GEMINI_TTS_VOICE`. |
+
+## Speed
+
+Measured from Vercel (Mumbai) on 28 Nov 2026: the copilot uses `gemini-3-flash-preview` with minimal thinking (about 1.4 s to choose data, about 1.7 s to write an answer); headline numbers are in the prompt so common questions need no tool round trip. Sheet reads go through Vercel's edge cache (fresh for 20 s, then served instantly while refreshing), the app paints from the last copy it saw, and the other year is preloaded. The free Gemini tier has per-minute limits per model; the copilot moves to the next model when one is limited.
+
 ## Connect the Google Sheets (Apps Script, about 3 minutes per sheet)
 
 1. Open the sheet → **Extensions → Apps Script** → replace the code with `apps-script/Code.gs` → Save.

@@ -3,8 +3,9 @@
 // so the copilot and the dashboard always use the same numbers. This route only adds the API key.
 // Env: GEMINI_API_KEY (required), GEMINI_MODEL (optional override), GEMINI_THINKING (optional: minimal|low|medium|high).
 // Measured from Vercel on 28 Nov 2026: gemini-3-flash-preview with minimal thinking picks tools in ~1.4 s and writes a
-// 120-token answer in ~1.7 s; gemini-flash-latest was overloaded (503s and 25 s+ hangs); the 2.x models are retired.
-const FALLBACK_MODELS = ['gemini-3-flash-preview', 'gemini-flash-lite-latest', 'gemini-flash-latest'];
+// 120-token answer in ~1.7 s; gemini-3.5-flash-lite is close (~1.5-1.7 s). gemini-flash-latest, 3.7 and 3.8 Flash were
+// overloaded (503s, 25 s+ hangs); the 2.x models are retired. Free-tier limits are per model, so a 429 moves on too.
+const FALLBACK_MODELS = ['gemini-3-flash-preview', 'gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-flash-lite-latest'];
 const PER_CALL_MS = 15000;
 
 export default async function handler(req, res) {
@@ -47,10 +48,10 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, model, ms: Date.now() - started, content: cand.content || { role: 'model', parts: [] }, finishReason: cand.finishReason, usage: j.usageMetadata });
       }
       last = { status: r.status, error: (j.error && j.error.message) || `HTTP ${r.status}` };
-      if (r.status === 400 && thinking && /thinking/i.test(last.error)) continue; // model has no thinking levels: retry without
+      if (r.status === 400 && thinking && /thinking/i.test(last.error)) continue; // model doesn't take this thinking level: retry without
       break; // 404 retired, 503 overloaded, 500: try the next model
     }
-    if (last.status === 401 || last.status === 403 || (last.status === 429 && /quota|billing/i.test(last.error))) break; // key problems: other models won't help
+    if (last.status === 401 || last.status === 403) break; // bad key: other models won't help (429 limits are per model, so keep going)
   }
   const hint = last.status === 429 ? 'Gemini free-tier rate limit reached. Wait a minute and retry.' : last.error;
   return res.status(last.status === 429 ? 429 : last.status === 504 ? 504 : 502).json({ ok: false, error: hint, tried: models });

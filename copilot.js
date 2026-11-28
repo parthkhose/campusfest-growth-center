@@ -1,5 +1,6 @@
 // Embedded AI growth analyst. Gemini plans and writes; every number comes from a tool call that runs
 // in this browser against the same engine the dashboard uses. Writes (tasks) need the user's click.
+import { startListening, stopListening, isListening, canListen, speak, stopSpeaking } from './voice.js';
 import { calculate } from './engine.js';
 import { getSettings, LS } from './store.js';
 
@@ -166,8 +167,10 @@ function welcome() {
   suggestions();
 }
 
-async function ask(text) {
+let voiceOn = false;
+async function ask(text, opts = {}) {
   if (busy || !text.trim()) return;
+  stopSpeaking();
   busy = true; $('#cpSuggest').innerHTML = '';
   addMsg('user', C.esc(text));
   history.push({ role: 'user', parts: [{ text: `${text}\n\n[context: dashboard mode=${C.state.mode}${C.state.mode === 'sample' ? `, selected as_of=${C.state.asOf}` : ''}]` }] });
@@ -185,6 +188,7 @@ async function ask(text) {
       if (!calls.length) {
         typing.remove();
         const d = addMsg('bot', md(texts || '(no answer)'));
+        if ((voiceOn || opts.voice) && texts) speak(texts, { onState: (on) => $('#cpVoice').classList.toggle('speaking', on) });
         const secs = ((performance.now() - t0) / 1000).toFixed(1);
         if (!trace.length) d.insertAdjacentHTML('beforeend', `<div class="trace">${secs} s · from the headline numbers</div>`);
         if (trace.length) d.insertAdjacentHTML('beforeend', `<details class="trace"><summary>${secs} s · data used: ${trace.map((t) => C.esc(t.name)).join(', ')}</summary>${trace.map((t) => `<pre>${C.esc(t.name)}(${C.esc(JSON.stringify(t.args))})\n→ ${C.esc(JSON.stringify(t.result).slice(0, 1500))}</pre>`).join('')}</details>`);
@@ -213,8 +217,24 @@ export function initCopilot(ctx) {
   C = ctx;
   const open = () => { document.querySelector('.app').classList.add('cp-open'); if (!$('#cpMsgs').children.length) welcome(); $('#cpText').focus(); };
   $('#copilotBtn').onclick = () => (document.querySelector('.app').classList.contains('cp-open') ? document.querySelector('.app').classList.remove('cp-open') : open());
-  $('#cpClose').onclick = () => document.querySelector('.app').classList.remove('cp-open');
-  $('#cpNew').onclick = () => { history = []; welcome(); };
+  $('#cpClose').onclick = () => { document.querySelector('.app').classList.remove('cp-open'); stopSpeaking(); stopListening(); };
+  // voice: mic to ask, speaker toggle to hear answers (a spoken question always gets a spoken answer)
+  try { voiceOn = localStorage.getItem('gc.voice') === '1'; } catch { /* no storage */ }
+  const setVoiceBtn = () => { $('#cpVoice').setAttribute('aria-pressed', String(voiceOn)); $('#cpVoice').querySelector('span').textContent = voiceOn ? 'Voice on' : 'Voice off'; };
+  setVoiceBtn();
+  $('#cpVoice').onclick = () => { if ($('#cpVoice').classList.contains('speaking')) { stopSpeaking(); $('#cpVoice').classList.remove('speaking'); return; } voiceOn = !voiceOn; try { localStorage.setItem('gc.voice', voiceOn ? '1' : '0'); } catch { /* */ } setVoiceBtn(); if (!voiceOn) stopSpeaking(); };
+  if (!canListen()) $('#cpMic').hidden = true;
+  $('#cpMic').onclick = () => {
+    if (isListening()) return stopListening();
+    if (busy) return;
+    startListening({
+      onInterim: (t) => { $('#cpText').value = t; },
+      onFinal: (t) => { $('#cpText').value = ''; ask(t, { voice: true }); },
+      onState: (on) => { $('#cpMic').classList.toggle('on', on); $('#cpText').placeholder = on ? 'Listening… click the mic again to stop' : 'Ask, or press the mic and speak…'; },
+      onError: (m) => addMsg('err', C.esc(m)),
+    });
+  };
+  $('#cpNew').onclick = () => { history = []; stopSpeaking(); welcome(); };
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelector('.app').classList.remove('cp-open'); });
   $('#cpForm').onsubmit = (e) => { e.preventDefault(); const t = $('#cpText').value; $('#cpText').value = ''; ask(t); };
   $('#cpText').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#cpForm').requestSubmit(); } });
