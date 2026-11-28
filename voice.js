@@ -4,11 +4,12 @@
 // Speaking:  Gemini text-to-speech through /api/voice, one sentence group at a time so playback starts early.
 //            Falls back to the browser's built-in voices if Gemini TTS is unavailable or rate-limited.
 
-const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const W = typeof window !== 'undefined' ? window : {}; // also loads in Node for the tool tests
+const SR = W.SpeechRecognition || W.webkitSpeechRecognition;
 let rec = null, mediaRec = null, chunks = [], listening = false;
 let speakId = 0, current = null;
 
-export const canListen = () => !!SR || !!(navigator.mediaDevices && window.MediaRecorder);
+export const canListen = () => !!SR || !!(typeof navigator !== 'undefined' && navigator.mediaDevices && W.MediaRecorder);
 
 // ---------- listening ----------
 export function startListening({ onInterim, onFinal, onState, onError }) {
