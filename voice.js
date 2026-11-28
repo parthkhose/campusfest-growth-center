@@ -188,9 +188,11 @@ async function streamSpeak(text, id, onFirst) {
   await new Promise((done) => { const left = Math.max(0, (t - actx.currentTime) * 1000); setTimeout(done, left + 50); });
 }
 
+let activeOnState = null;
 export async function speak(md, { onState } = {}) {
   stopSpeaking();
   const id = ++speakId;
+  activeOnState = onState || null;
   const text = toSpeech(md).slice(0, 1200);
   if (!text) return;
   onState && onState(true);
@@ -204,6 +206,7 @@ export async function speak(md, { onState } = {}) {
 }
 export function stopSpeaking() {
   speakId++;
+  if (activeOnState) { const f = activeOnState; activeOnState = null; f(false); } // never leave the 'speaking' marker on
   if (abortCtl) { try { abortCtl.abort(); } catch { /* */ } abortCtl = null; }
   for (const s of playing) { try { s.stop(); } catch { /* already ended */ } }
   playing = [];

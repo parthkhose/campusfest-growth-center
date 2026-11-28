@@ -499,6 +499,7 @@ $('#reloadBtn').onclick = () => load({ fresh: true });
 (async function boot() {
   try { const r = await fetch('/api/config'); if (r.ok) { const c = await r.json(); window.__GC_SERVER__ = c; window.__GC_ENV__ = Object.fromEntries(Object.entries(c.env || {}).filter(([, v]) => v)); } } catch { /* static preview */ }
   S.view = VIEWS[S.mode][0][0];
-  await load();
+  // Wire up the copilot before loading data, so its buttons work from the first click.
   initCopilot({ state: S, createTask, currentTasks, sampleTasks, inr, esc, render: () => render(), insights: () => computeInsights(), liveSummary: () => (S.liveSum || liveSummary(S.live.tracker)) });
+  await load();
 })();

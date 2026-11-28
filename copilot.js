@@ -177,6 +177,8 @@ async function ask(text, opts = {}) {
   history.push({ role: 'user', parts: [{ text: `${text}\n\n[context: dashboard mode=${C.state.mode}${C.state.mode === 'sample' ? `, selected as_of=${C.state.asOf}` : ''}]` }] });
   const tools = [...(C.state.mode === 'sample' ? SAMPLE_TOOLS : LIVE_TOOLS), ...COMMON_TOOLS];
   const typing = addMsg('typing', 'Thinking…');
+  for (let i = 0; i < 100 && !(C.state.mode === 'sample' ? C.state.engine : C.state.liveSum); i++) { typing.textContent = 'Loading data…'; await new Promise((r) => setTimeout(r, 100)); }
+  typing.textContent = 'Thinking…';
   const trace = [], t0 = performance.now();
   try {
     for (let step = 0; step < 8; step++) {
