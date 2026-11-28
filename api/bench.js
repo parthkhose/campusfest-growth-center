@@ -20,6 +20,12 @@ export default async function handler(req, res) {
   const only = req.query.m ? String(req.query.m).split(',') : null;
   for (const m of (only || models)) runs.push(ask(m, undefined));
   for (const lvl of ['low', 'minimal']) runs.push(ask('gemini-3-flash-preview', lvl));
+  if (req.query.gen) {
+    const gen = (model, lvl) => { const t0 = Date.now(); return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Data: confirmed 24 partners vs goal 28; confirmed value Rs 22.4L; warm channels won 24 of 25 deals, cold 0 of 33; 18 qualified brands never got a proposal. In about 100 words, what should the team change next year?' }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 1024, ...(lvl ? { thinkingConfig: { thinkingLevel: lvl } } : {}) } }), signal: AbortSignal.timeout(25000) })
+      .then(async (r) => { const j = await r.json(); const u = j.usageMetadata || {}; return { model: 'gen ' + model, thinking: lvl || 'default', ms: Date.now() - t0, status: r.status, out_tokens: u.candidatesTokenCount, thought_tokens: u.thoughtsTokenCount, err: j.error?.message?.slice(0, 60) }; }).catch((e) => ({ model: 'gen ' + model, ms: Date.now() - t0, err: String(e.name) })); };
+    runs.push(gen('gemini-3-flash-preview', 'low'), gen('gemini-3-flash-preview', 'minimal'), gen('gemini-flash-lite-latest'));
+  }
   if (req.query.stream) {
     const t0 = Date.now();
     runs.push(fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:streamGenerateContent?alt=sse`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
