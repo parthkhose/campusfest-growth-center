@@ -155,13 +155,20 @@ async function streamSpeak(text, id, onFirst) {
   primeAudio();
   if (!actx) throw new Error('no audio');
   abortCtl = new AbortController();
-  const r = await fetch('/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'tts_stream', text }), signal: abortCtl.signal });
-  if (!r.ok || !r.body) throw new Error('tts unavailable');
+  const ctl = abortCtl;
+  // If no audio arrives quickly, give up on Gemini so the browser voice can read it instead.
+  const slow = setTimeout(() => { ctl.timedOut = true; ctl.abort(); }, 6000);
+  let r;
+  try { r = await fetch('/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'tts_stream', text }), signal: ctl.signal }); }
+  catch (e) { clearTimeout(slow); throw ctl.timedOut ? new Error('tts slow') : e; }
+  if (!r.ok || !r.body) { clearTimeout(slow); throw new Error('tts unavailable'); }
   const rate = Number(r.headers.get('x-sample-rate') || 24000);
   const rd = r.body.getReader();
   let t = 0, carry = null, first = true;
   for (;;) {
-    const { done, value } = await rd.read();
+    let chunk;
+    try { chunk = await rd.read(); } catch (e) { clearTimeout(slow); if (first && ctl.timedOut) throw new Error('tts slow'); throw e; }
+    const { done, value } = chunk;
     if (done || id !== speakId) break;
     let bytes = value;
     if (carry) { const m = new Uint8Array(carry.length + bytes.length); m.set(carry); m.set(bytes, carry.length); bytes = m; carry = null; }
@@ -171,10 +178,11 @@ async function streamSpeak(text, id, onFirst) {
     const buf = actx.createBuffer(1, n, rate), ch = buf.getChannelData(0);
     for (let i = 0; i < n; i++) ch[i] = dv.getInt16(i * 2, true) / 32768;
     const src = actx.createBufferSource(); src.buffer = buf; src.connect(actx.destination);
-    if (first) { t = actx.currentTime + 0.08; first = false; onFirst && onFirst(); }
+    if (first) { clearTimeout(slow); t = actx.currentTime + 0.08; first = false; onFirst && onFirst(); }
     t = Math.max(t, actx.currentTime + 0.02);
     src.start(t); t += buf.duration; playing.push(src);
   }
+  clearTimeout(slow);
   if (first) throw new Error('no audio');
   // wait until the last scheduled piece has played
   await new Promise((done) => { const left = Math.max(0, (t - actx.currentTime) * 1000); setTimeout(done, left + 50); });

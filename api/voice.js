@@ -25,7 +25,8 @@ async function gemini(model, body, key, ms) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
+  if (req.method === 'GET' && req.query.say && process.env.WRITE_TOKEN && req.query.t === process.env.WRITE_TOKEN) req.body = { action: 'tts_stream', text: String(req.query.say) }; // TEMP check
+  else if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(503).json({ ok: false, error: 'GEMINI_API_KEY is not set on the server.' });
   let b;
@@ -37,17 +38,21 @@ export default async function handler(req, res) {
     const voice = process.env.GEMINI_TTS_VOICE || 'Kore';
     const models = [...new Set([process.env.GEMINI_TTS_MODEL, ...TTS_MODELS].filter(Boolean))];
     let last = 'no model answered';
+    const deadline = Date.now() + 20000; // stay well inside the 60 s function limit
     for (const model of models) {
+      const left = deadline - Date.now();
+      if (left < 2000) break;
       let r;
       try {
         r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
           method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
           body: JSON.stringify({ contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } }),
-          signal: AbortSignal.timeout(25000),
+          signal: AbortSignal.timeout(left),
         });
       } catch (e) { last = `${model}: ${e.name}`; continue; }
       if (!r.ok) { last = `${model}: HTTP ${r.status}`; if (r.status === 401 || r.status === 403) break; continue; }
       // Forward each audio chunk as soon as it arrives. Chunks may be raw PCM or WAV-wrapped; strip any WAV header.
+      // Parse the SSE stream line by line: Gemini may separate events with \r\n.
       let started = false, buf = '';
       const dec = new TextDecoder();
       const send = (b64, mime) => {
@@ -57,6 +62,12 @@ export default async function handler(req, res) {
         if (!started) { res.setHeader('content-type', 'application/octet-stream'); res.setHeader('x-sample-rate', String(rate)); res.setHeader('x-model', model); res.setHeader('cache-control', 'no-store'); started = true; }
         res.write(pcm);
       };
+      const handleLine = (line) => {
+        line = line.trim();
+        if (!line.startsWith('data:')) return;
+        let j; try { j = JSON.parse(line.slice(5).trim()); } catch { return; }
+        for (const p of j.candidates?.[0]?.content?.parts || []) if (p.inlineData && p.inlineData.data) send(p.inlineData.data, p.inlineData.mimeType);
+      };
       try {
         const rd = r.body.getReader();
         for (;;) {
@@ -64,14 +75,9 @@ export default async function handler(req, res) {
           if (done) break;
           buf += dec.decode(value, { stream: true });
           let i;
-          while ((i = buf.indexOf('\n\n')) >= 0) {
-            const evt = buf.slice(0, i); buf = buf.slice(i + 2);
-            const line = evt.split('\n').find((l) => l.startsWith('data: '));
-            if (!line) continue;
-            let j; try { j = JSON.parse(line.slice(6)); } catch { continue; }
-            for (const p of j.candidates?.[0]?.content?.parts || []) if (p.inlineData && p.inlineData.data) send(p.inlineData.data, p.inlineData.mimeType);
-          }
+          while ((i = buf.indexOf('\n')) >= 0) { handleLine(buf.slice(0, i)); buf = buf.slice(i + 1); }
         }
+        if (buf) handleLine(buf);
       } catch (e) { if (started) return res.end(); last = `${model}: ${e.name}`; continue; }
       if (started) return res.end();
       last = `${model}: no audio`;
