@@ -25,8 +25,7 @@ async function gemini(model, body, key, ms) {
 }
 
 export default async function handler(req, res) {
-  if (req.method === 'GET' && req.query.say && process.env.WRITE_TOKEN && req.query.t === process.env.WRITE_TOKEN) req.body = { action: 'tts_stream', text: String(req.query.say) }; // TEMP check
-  else if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
+  if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(503).json({ ok: false, error: 'GEMINI_API_KEY is not set on the server.' });
   let b;
