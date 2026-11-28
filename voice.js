@@ -9,55 +9,103 @@ const SR = W.SpeechRecognition || W.webkitSpeechRecognition;
 let rec = null, mediaRec = null, chunks = [], listening = false;
 let speakId = 0, current = null;
 
-export const canListen = () => !!SR || !!(typeof navigator !== 'undefined' && navigator.mediaDevices && W.MediaRecorder);
+export const canListen = () => !!(typeof navigator !== 'undefined' && navigator.mediaDevices && W.MediaRecorder);
 
 // ---------- listening ----------
-export function startListening({ onInterim, onFinal, onState, onError }) {
+// Two engines run together. The browser's Web Speech API gives a live transcript, but in some browsers (the
+// Claude desktop app's built-in browser, Brave, some Edge setups, behind some VPNs) it fails with "network"
+// because it relies on Google's speech servers. So the microphone is also recorded; if Web Speech fails, the
+// recording is transcribed by Gemini through /api/voice, with no need to speak again, and Web Speech is
+// skipped from then on. Recording stops by itself after a short silence.
+const SR_BROKEN = 'gc.voice.srBroken';
+const srOk = () => { try { return !!SR && localStorage.getItem(SR_BROKEN) !== '1'; } catch { return !!SR; } };
+let stream = null, audioCtx = null, silenceTimer = null, cb = null, srDone = false, srText = '', useRecording = false;
+
+function cleanup() {
+  clearInterval(silenceTimer); silenceTimer = null;
+  if (audioCtx) { audioCtx.close().catch(() => {}); audioCtx = null; }
+  if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+}
+function finish(text) {
+  if (!listening) return;
+  listening = false; cleanup(); cb.onState(false);
+  if (text && text.trim()) cb.onFinal(text.trim()); else cb.onInterim('');
+}
+async function transcribe(blob) {
+  cb.onInterim('Transcribing…');
+  try {
+    const b64 = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+    const r = await fetch('/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'transcribe', audio: b64, mime: blob.type }) });
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error);
+    return j.text || '';
+  } catch (e) { cb.onError(`Could not transcribe: ${e.message}`); return ''; }
+}
+
+export async function startListening(callbacks) {
   stopSpeaking();
-  if (SR) {
+  cb = callbacks; srDone = false; srText = ''; useRecording = !srOk();
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch { return cb.onError('Microphone access was blocked. Allow it in the browser’s site settings, then try again.'); }
+  listening = true; cb.onState(true);
+
+  // 1) Record (always), with silence detection.
+  chunks = [];
+  const mime = ['audio/webm;codecs=opus', 'audio/ogg;codecs=opus', 'audio/mp4'].find((m) => W.MediaRecorder && MediaRecorder.isTypeSupported(m)) || '';
+  mediaRec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  mediaRec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  mediaRec.onstop = async () => {
+    if (!useRecording) return; // Web Speech handled it
+    const blob = new Blob(chunks, { type: mediaRec.mimeType || 'audio/webm' });
+    finish(blob.size < 3000 ? '' : await transcribe(blob));
+  };
+  mediaRec.start(250);
+  try {
+    audioCtx = new (W.AudioContext || W.webkitAudioContext)();
+    const an = audioCtx.createAnalyser(); an.fftSize = 1024;
+    audioCtx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    let heard = false, quietMs = 0; const started = Date.now();
+    silenceTimer = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      const rms = Math.sqrt(buf.reduce((s, v) => s + v * v, 0) / buf.length);
+      if (rms > 0.02) { heard = true; quietMs = 0; } else quietMs += 100;
+      const tooQuiet = !heard && Date.now() - started > 7000, doneTalking = heard && quietMs > 1400, tooLong = Date.now() - started > 30000;
+      if (tooQuiet || doneTalking || tooLong) stopListening();
+    }, 100);
+  } catch { /* no Web Audio: user stops with the mic button; 30 s cap below */ setTimeout(() => listening && stopListening(), 30000); }
+
+  // 2) Live transcript from Web Speech, when it works here.
+  if (!useRecording) {
     rec = new SR();
-    rec.lang = 'en-IN'; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
-    let finalText = '';
+    rec.lang = 'en-IN'; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
     rec.onresult = (e) => {
       let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) finalText += t; else interim += t;
-      }
-      onInterim((finalText + ' ' + interim).trim());
+      srText = '';
+      for (let i = 0; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) srText += t; else interim += t; }
+      cb.onInterim((srText + ' ' + interim).trim());
     };
-    rec.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') onError(e.error === 'not-allowed' ? 'Microphone access was blocked. Allow it in the browser’s site settings.' : `Speech recognition error: ${e.error}`); };
-    rec.onend = () => { listening = false; onState(false); if (finalText.trim()) onFinal(finalText.trim()); };
-    rec.start(); listening = true; onState(true);
-    return;
+    rec.onerror = (e) => {
+      if (['network', 'service-not-allowed', 'language-not-supported'].includes(e.error)) {
+        // Web Speech can't reach its servers here: switch to the recording for this question and the next ones.
+        try { localStorage.setItem(SR_BROKEN, '1'); } catch { /* */ }
+        useRecording = true; srDone = true;
+        cb.onInterim('Listening…');
+      } else if (e.error === 'not-allowed') { cb.onError('Microphone access was blocked. Allow it in the browser’s site settings, then try again.'); useRecording = false; finish(''); }
+    };
+    rec.onend = () => { srDone = true; if (!useRecording && listening && mediaRec.state !== 'recording') finish(srText); };
+    try { rec.start(); } catch { useRecording = true; }
   }
-  // Fallback: record, then transcribe on the server.
-  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-    chunks = [];
-    const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus') ? 'audio/ogg;codecs=opus' : '');
-    mediaRec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-    mediaRec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
-    mediaRec.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop());
-      listening = false; onState(false);
-      const blob = new Blob(chunks, { type: mediaRec.mimeType || 'audio/webm' });
-      if (blob.size < 2000) return;
-      onInterim('Transcribing…');
-      try {
-        const b64 = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
-        const r = await fetch('/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'transcribe', audio: b64, mime: blob.type }) });
-        const j = await r.json();
-        if (!j.ok) throw new Error(j.error);
-        onInterim(j.text || ''); if (j.text) onFinal(j.text);
-      } catch (e) { onInterim(''); onError(`Could not transcribe: ${e.message}`); }
-    };
-    mediaRec.start(); listening = true; onState(true);
-    setTimeout(() => { if (mediaRec && mediaRec.state === 'recording') mediaRec.stop(); }, 30000); // 30 s cap
-  }).catch(() => onError('Microphone access was blocked. Allow it in the browser’s site settings.'));
 }
 export function stopListening() {
-  if (rec && listening) rec.stop();
+  if (!listening) return;
+  clearInterval(silenceTimer); silenceTimer = null;
   if (mediaRec && mediaRec.state === 'recording') mediaRec.stop();
+  if (!useRecording) {
+    // Use Web Speech's text; if it caught nothing, transcribe the recording instead.
+    const done = async () => { if (srText.trim()) return finish(srText); const blob = new Blob(chunks, { type: (mediaRec && mediaRec.mimeType) || 'audio/webm' }); finish(blob.size < 3000 ? '' : await transcribe(blob)); };
+    if (rec && !srDone) { rec.onend = () => setTimeout(done, 50); rec.stop(); } else setTimeout(done, 50);
+  }
 }
 export const isListening = () => listening;
 

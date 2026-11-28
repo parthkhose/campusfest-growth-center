@@ -98,7 +98,7 @@ Both are created from `data/CampusFest_2025_Sponsorship_Data.xlsx` and `data/Cam
 
 | | How | Cost / setup |
 |---|---|---|
-| Speak a question | Mic button in the copilot. Chrome, Edge and Safari use the browser's Web Speech API (live transcript, Indian English `en-IN`). Firefox records and transcribes through `/api/voice` with Gemini. | Free. The browser asks once for microphone access. |
+| Speak a question | Mic button in the copilot. The microphone is recorded and, where it works, the browser's Web Speech API shows a live transcript (Indian English). Where Web Speech fails (it needs Google's speech servers: the Claude desktop browser, Brave and some VPN or Edge setups return "network"), the recording is transcribed by Gemini through `/api/voice` with no need to repeat, and Web Speech is skipped from then on. Recording stops after a short silence. | Free. The browser asks once for microphone access. |
 | Hear the answer | Speaker toggle ("Voice on"). A spoken question is always answered aloud. `/api/voice` uses Gemini text-to-speech (`gemini-3.8-flash-lite-tts`, voice `Kore`), one sentence group at a time so playback starts quickly; it falls back to the browser's built-in voice if TTS is unavailable or rate-limited. | Free tier of the same `GEMINI_API_KEY`. Optional: `GEMINI_TTS_MODEL`, `GEMINI_TTS_VOICE`. |
 
 ## Speed
