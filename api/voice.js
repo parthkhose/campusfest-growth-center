@@ -22,7 +22,31 @@ async function gemini(model, body, key, ms) {
   return { ok: r.ok, status: r.status, j, error: (j.error && j.error.message) || `HTTP ${r.status}` };
 }
 
+async function probe(req, res, key) { // TEMPORARY timing check, removed after measuring
+  const short = 'We confirmed 24 partners against a goal of 28.';
+  const one = async (label, model, text, stream) => {
+    const t0 = Date.now();
+    const body = { contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } } };
+    try {
+      if (!stream) { const r = await gemini(model, body, key, 20000); const p = r.j.candidates?.[0]?.content?.parts?.find((x) => x.inlineData); return { label, model, ms: Date.now() - t0, status: r.status, bytes: p ? Math.round(p.inlineData.data.length * 0.75) : 0, mime: p?.inlineData.mimeType, err: r.ok ? undefined : r.error.slice(0, 80) }; }
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+      const rd = r.body.getReader(); let first = 0, n = 0, events = 0, buf = '';
+      for (;;) { const { done, value } = await rd.read(); if (done) break; buf += new TextDecoder().decode(value); const k = (buf.match(/\ndata: |^data: /g) || []).length; if (k > events) { events = k; if (!first) first = Date.now() - t0; } n += value.length; }
+      return { label, model, status: r.status, first_event_ms: first, ms: Date.now() - t0, events, bytes: n, err: r.ok ? undefined : buf.slice(0, 120) };
+    } catch (e) { return { label, model, ms: Date.now() - t0, err: e.name }; }
+  };
+  const L = 'gemini-3.8-flash-lite-tts';
+  const out = [];
+  out.push(await one('plain short', L, short));
+  out.push(await one('with style prompt', L, 'Read this aloud in a clear, warm, professional voice with a light Indian English accent, at a brisk pace:\n' + short));
+  out.push(await one('stream short', L, short, true));
+  out.push(await one('stream 3 sentences', L, short + ' Warm channels won 24 of 25 deals. Cold email won none of its 11 deals, so we should stop it.', true));
+  out.push(await one('plain short (full model)', 'gemini-3.8-flash-tts', short));
+  return res.status(200).json(out);
+}
+
 export default async function handler(req, res) {
+  if (req.method === 'GET' && process.env.WRITE_TOKEN && req.query.t === process.env.WRITE_TOKEN) return probe(req, res, process.env.GEMINI_API_KEY);
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(503).json({ ok: false, error: 'GEMINI_API_KEY is not set on the server.' });
