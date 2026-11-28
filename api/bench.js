@@ -16,6 +16,19 @@ export default async function handler(req, res) {
     }).then(async (r) => { const j = await r.json().catch(() => ({})); const p = (j.candidates?.[0]?.content?.parts || []); return { model, thinking: thinking ?? 'default', ms: Date.now() - t0, status: r.status, out: p.map((x) => x.functionCall ? 'call:' + x.functionCall.name : 'text').join(','), err: j.error?.message?.slice(0, 80) }; })
       .catch((e) => ({ model, thinking: thinking ?? 'default', ms: Date.now() - t0, err: String(e.name) }));
   };
+  if (req.query.list) {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': key } });
+    const j = await r.json();
+    return res.status(200).json((j.models || []).map((m) => ({ id: m.name.replace('models/', ''), methods: m.supportedGenerationMethods })).filter((m) => /tts|audio|live|flash/i.test(m.id)));
+  }
+  if (req.query.tts) {
+    const t0 = Date.now();
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${req.query.tts}:generateContent`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ parts: [{ text: 'Say clearly: We confirmed 24 partners against a goal of 28, worth 22 lakh rupees.' }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } } }) });
+    const j = await r.json();
+    const part = j.candidates?.[0]?.content?.parts?.[0]?.inlineData;
+    return res.status(200).json({ model: req.query.tts, ms: Date.now() - t0, status: r.status, mime: part?.mimeType, audio_bytes: part ? Math.round(part.data.length * 0.75) : 0, err: j.error?.message?.slice(0, 120) });
+  }
   const runs = [];
   const only = req.query.m ? String(req.query.m).split(',') : null;
   for (const m of (only || models)) runs.push(ask(m, undefined));
