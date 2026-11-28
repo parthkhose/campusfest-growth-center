@@ -17,11 +17,17 @@ export default async function handler(req, res) {
       .catch((e) => ({ model, thinking: thinking ?? 'default', ms: Date.now() - t0, err: String(e.name) }));
   };
   const runs = [];
-  for (const m of models) runs.push(ask(m, undefined));
-  for (const m of ['gemini-flash-latest', 'gemini-2.5-flash']) runs.push(ask(m, 0));
-  runs.push(ask('gemini-flash-latest', 'low'));
+  const only = req.query.m ? String(req.query.m).split(',') : null;
+  for (const m of (only || models)) runs.push(ask(m, undefined));
+  for (const lvl of ['low', 'minimal']) runs.push(ask('gemini-3-flash-preview', lvl));
+  if (req.query.stream) {
+    const t0 = Date.now();
+    runs.push(fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:streamGenerateContent?alt=sse`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'In 120 words, explain why warm intros convert better than cold email for sponsorships.' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'low' } } }) })
+      .then(async (r) => { const rd = r.body.getReader(); let first = 0, n = 0; for (;;) { const { done, value } = await rd.read(); if (done) break; n += value.length; if (!first) first = Date.now() - t0; } return { model: 'stream gemini-3-flash-preview', first_byte_ms: first, ms: Date.now() - t0, bytes: n }; }));
+  }
   const timeScript = async (name, url) => { const t0 = Date.now(); try { const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(25000) }); const tx = await r.text(); return { name, ms: Date.now() - t0, bytes: tx.length, status: r.status }; } catch (e) { return { name, ms: Date.now() - t0, err: String(e.name) }; } };
-  const sheets = [timeScript('2025 script', process.env.SAMPLE_SCRIPT_URL), timeScript('2026 script', process.env.TRACKER_SCRIPT_URL)];
+  const sheets = req.query.nosheets ? [] : [timeScript('2025 script', process.env.SAMPLE_SCRIPT_URL), timeScript('2026 script', process.env.TRACKER_SCRIPT_URL)];
   const [m, s] = await Promise.all([Promise.all(runs), Promise.all(sheets)]);
   res.setHeader('cache-control', 'no-store');
   res.status(200).json({ region: process.env.VERCEL_REGION, models: m.sort((a, b) => a.ms - b.ms), sheets: s });
