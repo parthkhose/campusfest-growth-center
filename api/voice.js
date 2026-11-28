@@ -1,4 +1,6 @@
-// POST /api/voice  { action: 'tts', text }                  -> audio/wav (Gemini text-to-speech)
+// POST /api/voice  { action: 'tts_stream', text }           -> raw 16-bit mono PCM, streamed as Gemini produces it
+//                                                              (x-sample-rate header). First audio in ~1 s.
+//                  { action: 'tts', text }                  -> audio/wav (whole clip; kept as a fallback)
 //                  { action: 'transcribe', audio, mime }     -> { ok, text }  (Gemini speech-to-text, for browsers
 //                                                                without the Web Speech API, e.g. Firefox)
 // Uses the same GEMINI_API_KEY as the copilot; free tier. Optional env: GEMINI_TTS_MODEL, GEMINI_TTS_VOICE.
@@ -22,36 +24,60 @@ async function gemini(model, body, key, ms) {
   return { ok: r.ok, status: r.status, j, error: (j.error && j.error.message) || `HTTP ${r.status}` };
 }
 
-async function probe(req, res, key) { // TEMPORARY timing check, removed after measuring
-  const short = 'We confirmed 24 partners against a goal of 28.';
-  const one = async (label, model, text, stream) => {
-    const t0 = Date.now();
-    const body = { contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } } } };
-    try {
-      if (!stream) { const r = await gemini(model, body, key, 20000); const p = r.j.candidates?.[0]?.content?.parts?.find((x) => x.inlineData); return { label, model, ms: Date.now() - t0, status: r.status, bytes: p ? Math.round(p.inlineData.data.length * 0.75) : 0, mime: p?.inlineData.mimeType, err: r.ok ? undefined : r.error.slice(0, 80) }; }
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
-      const rd = r.body.getReader(); let first = 0, n = 0, events = 0, buf = '';
-      for (;;) { const { done, value } = await rd.read(); if (done) break; buf += new TextDecoder().decode(value); const k = (buf.match(/\ndata: |^data: /g) || []).length; if (k > events) { events = k; if (!first) first = Date.now() - t0; } n += value.length; }
-      return { label, model, status: r.status, first_event_ms: first, ms: Date.now() - t0, events, bytes: n, err: r.ok ? undefined : buf.slice(0, 120) };
-    } catch (e) { return { label, model, ms: Date.now() - t0, err: e.name }; }
-  };
-  const L = 'gemini-3.8-flash-lite-tts';
-  const out = [];
-  out.push(await one('plain short', L, short));
-  out.push(await one('with style prompt', L, 'Read this aloud in a clear, warm, professional voice with a light Indian English accent, at a brisk pace:\n' + short));
-  out.push(await one('stream short', L, short, true));
-  out.push(await one('stream 3 sentences', L, short + ' Warm channels won 24 of 25 deals. Cold email won none of its 11 deals, so we should stop it.', true));
-  out.push(await one('plain short (full model)', 'gemini-3.8-flash-tts', short));
-  return res.status(200).json(out);
-}
-
 export default async function handler(req, res) {
-  if (req.method === 'GET' && process.env.WRITE_TOKEN && req.query.t === process.env.WRITE_TOKEN) return probe(req, res, process.env.GEMINI_API_KEY);
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
   const key = process.env.GEMINI_API_KEY;
   if (!key) return res.status(503).json({ ok: false, error: 'GEMINI_API_KEY is not set on the server.' });
   let b;
   try { b = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}; } catch { return res.status(400).json({ ok: false, error: 'bad JSON' }); }
+
+  if (b.action === 'tts_stream') {
+    const text = String(b.text || '').slice(0, 1200).trim();
+    if (!text) return res.status(400).json({ ok: false, error: 'text required' });
+    const voice = process.env.GEMINI_TTS_VOICE || 'Kore';
+    const models = [...new Set([process.env.GEMINI_TTS_MODEL, ...TTS_MODELS].filter(Boolean))];
+    let last = 'no model answered';
+    for (const model of models) {
+      let r;
+      try {
+        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
+          method: 'POST', headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({ contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } }),
+          signal: AbortSignal.timeout(25000),
+        });
+      } catch (e) { last = `${model}: ${e.name}`; continue; }
+      if (!r.ok) { last = `${model}: HTTP ${r.status}`; if (r.status === 401 || r.status === 403) break; continue; }
+      // Forward each audio chunk as soon as it arrives. Chunks may be raw PCM or WAV-wrapped; strip any WAV header.
+      let started = false, buf = '';
+      const dec = new TextDecoder();
+      const send = (b64, mime) => {
+        let pcm = Buffer.from(b64, 'base64');
+        let rate = Number((/rate=(\d+)/.exec(mime || '') || [])[1] || 24000);
+        if (pcm.slice(0, 4).toString() === 'RIFF') { rate = pcm.readUInt32LE(24); const d = pcm.indexOf('data'); pcm = pcm.slice(d + 8); }
+        if (!started) { res.setHeader('content-type', 'application/octet-stream'); res.setHeader('x-sample-rate', String(rate)); res.setHeader('x-model', model); res.setHeader('cache-control', 'no-store'); started = true; }
+        res.write(pcm);
+      };
+      try {
+        const rd = r.body.getReader();
+        for (;;) {
+          const { done, value } = await rd.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf('\n\n')) >= 0) {
+            const evt = buf.slice(0, i); buf = buf.slice(i + 2);
+            const line = evt.split('\n').find((l) => l.startsWith('data: '));
+            if (!line) continue;
+            let j; try { j = JSON.parse(line.slice(6)); } catch { continue; }
+            for (const p of j.candidates?.[0]?.content?.parts || []) if (p.inlineData && p.inlineData.data) send(p.inlineData.data, p.inlineData.mimeType);
+          }
+        }
+      } catch (e) { if (started) return res.end(); last = `${model}: ${e.name}`; continue; }
+      if (started) return res.end();
+      last = `${model}: no audio`;
+    }
+    return res.status(502).json({ ok: false, error: last });
+  }
 
   if (b.action === 'tts') {
     const text = String(b.text || '').slice(0, 600).trim();
@@ -62,7 +88,7 @@ export default async function handler(req, res) {
     for (const model of models) {
       try {
         const r = await gemini(model, {
-          contents: [{ parts: [{ text: `Read this aloud in a clear, warm, professional voice with a light Indian English accent, at a brisk pace:\n${text}` }] }],
+          contents: [{ parts: [{ text }] }], // plain text only: TTS models read any instruction aloud
           generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
         }, key, 15000);
         const part = r.ok && r.j.candidates?.[0]?.content?.parts?.find((p) => p.inlineData);

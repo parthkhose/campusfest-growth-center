@@ -1,7 +1,7 @@
 // Voice for the copilot.
 // Listening: the browser's Web Speech API (Chrome, Edge, Safari; free, live transcript, Indian English).
 //            Browsers without it (Firefox) record with MediaRecorder and transcribe through /api/voice (Gemini).
-// Speaking:  Gemini text-to-speech through /api/voice, one sentence group at a time so playback starts early.
+// Speaking:  Gemini text-to-speech streamed through /api/voice and played as it arrives (first audio ~1 s).
 //            Falls back to the browser's built-in voices if Gemini TTS is unavailable or rate-limited.
 
 const W = typeof window !== 'undefined' ? window : {}; // also loads in Node for the tool tests
@@ -133,12 +133,10 @@ function groups(text, max = 260, cap = 900) {
   if (cur) out.push(cur);
   return out;
 }
-const tts = (text) => fetch('/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'tts', text }) })
-  .then((r) => (r.ok && /audio/.test(r.headers.get('content-type') || '') ? r.blob() : Promise.reject(new Error('tts unavailable'))));
 
 function browserSpeak(text, id) {
   return new Promise((done) => {
-    if (!window.speechSynthesis || id !== speakId) return done();
+    if (!W.speechSynthesis || id !== speakId) return done();
     const u = new SpeechSynthesisUtterance(text);
     const vs = speechSynthesis.getVoices();
     u.voice = vs.find((v) => /en-IN/i.test(v.lang)) || vs.find((v) => /^en/i.test(v.lang)) || null;
@@ -147,34 +145,61 @@ function browserSpeak(text, id) {
   });
 }
 
+// Streamed playback: /api/voice sends raw 16-bit PCM as Gemini produces it; each piece is scheduled on a
+// Web Audio clock right after the previous one, so speech starts about a second after the answer appears.
+let actx = null, playing = [], abortCtl = null;
+export function primeAudio() { // call from a click/keypress so the browser allows audio later
+  try { actx = actx || new (W.AudioContext || W.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch { /* no Web Audio */ }
+}
+async function streamSpeak(text, id, onFirst) {
+  primeAudio();
+  if (!actx) throw new Error('no audio');
+  abortCtl = new AbortController();
+  const r = await fetch('/api/voice', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'tts_stream', text }), signal: abortCtl.signal });
+  if (!r.ok || !r.body) throw new Error('tts unavailable');
+  const rate = Number(r.headers.get('x-sample-rate') || 24000);
+  const rd = r.body.getReader();
+  let t = 0, carry = null, first = true;
+  for (;;) {
+    const { done, value } = await rd.read();
+    if (done || id !== speakId) break;
+    let bytes = value;
+    if (carry) { const m = new Uint8Array(carry.length + bytes.length); m.set(carry); m.set(bytes, carry.length); bytes = m; carry = null; }
+    if (bytes.length % 2) { carry = bytes.slice(-1); bytes = bytes.slice(0, -1); }
+    if (!bytes.length) continue;
+    const n = bytes.length / 2, dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
+    const buf = actx.createBuffer(1, n, rate), ch = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) ch[i] = dv.getInt16(i * 2, true) / 32768;
+    const src = actx.createBufferSource(); src.buffer = buf; src.connect(actx.destination);
+    if (first) { t = actx.currentTime + 0.08; first = false; onFirst && onFirst(); }
+    t = Math.max(t, actx.currentTime + 0.02);
+    src.start(t); t += buf.duration; playing.push(src);
+  }
+  if (first) throw new Error('no audio');
+  // wait until the last scheduled piece has played
+  await new Promise((done) => { const left = Math.max(0, (t - actx.currentTime) * 1000); setTimeout(done, left + 50); });
+}
+
 export async function speak(md, { onState } = {}) {
   stopSpeaking();
   const id = ++speakId;
-  const parts = groups(toSpeech(md));
-  if (!parts.length) return;
+  const text = toSpeech(md).slice(0, 1200);
+  if (!text) return;
   onState && onState(true);
-  // Ask for the first two groups at once, then keep one request ahead of playback.
-  const pending = parts.map(() => null);
-  const want = (i) => { if (i < parts.length && !pending[i]) pending[i] = tts(parts[i]).catch(() => null); };
-  want(0); want(1);
-  let fallback = false;
-  for (let i = 0; i < parts.length && id === speakId; i++) {
-    want(i + 1);
-    const blob = fallback ? null : await pending[i];
-    if (id !== speakId) break;
-    if (!blob) { fallback = true; await browserSpeak(parts[i], id); continue; }
-    await new Promise((done) => {
-      const url = URL.createObjectURL(blob);
-      current = new Audio(url);
-      current.onended = current.onerror = () => { URL.revokeObjectURL(url); done(); };
-      current.play().catch(() => { fallback = true; current = null; browserSpeak(parts[i], id).then(done); });
-    });
+  let heard = false;
+  try { await streamSpeak(text, id, () => { heard = true; }); }
+  catch (e) {
+    if (id !== speakId || e.name === 'AbortError' || heard) { if (id === speakId) { playing = []; onState && onState(false); } return; } // don't restart a half-spoken answer
+    for (const part of groups(text)) { if (id !== speakId) break; await browserSpeak(part, id); } // backup: the browser's own voice
   }
-  if (id === speakId) { current = null; onState && onState(false); }
+  if (id === speakId) { playing = []; onState && onState(false); }
 }
 export function stopSpeaking() {
   speakId++;
+  if (abortCtl) { try { abortCtl.abort(); } catch { /* */ } abortCtl = null; }
+  for (const s of playing) { try { s.stop(); } catch { /* already ended */ } }
+  playing = [];
   if (current) { current.pause(); current = null; }
-  if (window.speechSynthesis) speechSynthesis.cancel();
+  if (W.speechSynthesis) speechSynthesis.cancel();
 }
-export const isSpeaking = () => !!current || (window.speechSynthesis && speechSynthesis.speaking);
+export const isSpeaking = () => playing.length > 0 || (W.speechSynthesis && speechSynthesis.speaking);

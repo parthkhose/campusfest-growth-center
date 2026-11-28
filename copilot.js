@@ -1,6 +1,6 @@
 // Embedded AI growth analyst. Gemini plans and writes; every number comes from a tool call that runs
 // in this browser against the same engine the dashboard uses. Writes (tasks) need the user's click.
-import { startListening, stopListening, isListening, canListen, speak, stopSpeaking } from './voice.js';
+import { startListening, stopListening, isListening, canListen, speak, stopSpeaking, primeAudio } from './voice.js';
 import { calculate } from './engine.js';
 import { getSettings, LS } from './store.js';
 
@@ -171,6 +171,7 @@ let voiceOn = false;
 async function ask(text, opts = {}) {
   if (busy || !text.trim()) return;
   stopSpeaking();
+  if (voiceOn || opts.voice) primeAudio(); // unlock audio during the click/keypress, before the answer arrives
   busy = true; $('#cpSuggest').innerHTML = '';
   addMsg('user', C.esc(text));
   history.push({ role: 'user', parts: [{ text: `${text}\n\n[context: dashboard mode=${C.state.mode}${C.state.mode === 'sample' ? `, selected as_of=${C.state.asOf}` : ''}]` }] });
@@ -225,6 +226,7 @@ export function initCopilot(ctx) {
   $('#cpVoice').onclick = () => { if ($('#cpVoice').classList.contains('speaking')) { stopSpeaking(); $('#cpVoice').classList.remove('speaking'); return; } voiceOn = !voiceOn; try { localStorage.setItem('gc.voice', voiceOn ? '1' : '0'); } catch { /* */ } setVoiceBtn(); if (!voiceOn) stopSpeaking(); };
   if (!canListen()) $('#cpMic').hidden = true;
   $('#cpMic').onclick = () => {
+    primeAudio();
     if (isListening()) return stopListening();
     if (busy) return;
     startListening({
